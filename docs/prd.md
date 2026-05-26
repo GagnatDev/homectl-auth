@@ -44,6 +44,12 @@ A centralized authentication service at `auth.homectl.no` that issues signed JWT
 24. As an app developer, I want the package to be available as a scoped private package on GitHub Packages, so that I can install it via npm without publishing to a public registry.
 25. As an app developer, I want to be able to migrate my existing app to centralized auth without disrupting users still on the old auth system, so that I can cut over gradually.
 
+### Privileged App User (e.g. a user with a high-ranked role in an app)
+
+26. As a privileged app user, I want to generate an invite link for a new user and assign them a role lower than my own, so that I can onboard new users to the app without needing admin intervention.
+27. As a privileged app user, I want the invite link I generate to be handled by the same central auth service, so that the new user only needs one account regardless of how many apps invite them.
+28. As a privileged app user, I want to be prevented from granting a role equal to or higher than my own, so that I cannot escalate another user's privileges beyond my own level.
+
 ## Implementation Decisions
 
 ### Modules
@@ -79,14 +85,35 @@ The central service deployed at `auth.homectl.no`. Composed of the following int
 **App Access Module**
 - Table: `(user_id, app_id, role)` — composite primary key
 - App definitions loaded from static config file (YAML/JSON, version-controlled)
-- Config shape: `{ id, name, allowedRedirectUris: string[] }`
+- Config shape:
+  ```json
+  {
+    "id": "travel-journal",
+    "name": "Travel Journal",
+    "allowedRedirectUris": ["https://reisedagbok.homectl.no/auth/callback"],
+    "roles": [
+      { "name": "follower", "rank": 1 },
+      { "name": "creator", "rank": 2 }
+    ]
+  }
+  ```
+- Role ranks are app-defined integers; the auth service treats them as opaque ordinals — no domain meaning is assumed
 - Designed so app definitions can later be moved to a DB table without changing the access module's interface
 
 **Invite Module**
-- Admin creates invite: specifies email, username, app access grants
-- Generates signed short-lived token (24h TTL), stores hash in Postgres
+- Two invite actors: **admin** (bypasses all rank checks) and **privileged app user** (subject to rank enforcement)
+- Admin creates invite via the admin GUI: specifies email, app access grants at any role
+- Privileged app user creates invite via the delegated invite API:
+  ```
+  POST /api/invites
+  Authorization: Bearer <JWT of inviting user>
+  { "email": "...", "appId": "travel-journal", "role": "follower" }
+  ```
+  Auth service enforces: `invitee_role.rank < inviter_role.rank` in that app — generic, no domain knowledge required
+- Both flows generate the same short-lived token (24h TTL), hash stored in Postgres
 - Invite link: `auth.homectl.no/invite?token=...`
 - On redemption: user sets password, account activated, app access rows created
+- If the invited email already has an account, the invite instead adds the app access grant to the existing account
 
 **Password Reset Module**
 - Admin generates reset link for any existing user
@@ -180,7 +207,7 @@ A small Express middleware package. Public interface:
 - **Token Module** — unit tests: sign a token, verify it decodes correctly, verify wrong algorithm is rejected, verify expired token is rejected
 - **Session Module** — integration tests: create session, refresh rotates token, old token rejected after rotation, expired session rejected
 - **Authorization Code Module** — integration tests: code exchange succeeds once, second exchange rejected, expired code rejected, mismatched redirect_uri rejected
-- **Invite Module** — integration tests: valid invite creates user + app access, expired invite rejected, reused invite rejected
+- **Invite Module** — integration tests: valid admin invite creates user + app access, valid delegated invite respects rank ceiling (invitee rank < inviter rank), invite at equal or higher rank rejected, expired invite rejected, reused invite rejected, invite to existing account adds app access without creating duplicate user
 - **Auth endpoints** — integration tests against a test Postgres instance, covering the full login → refresh → logout cycle; mirrors the pattern in `travel-journal/packages/server`
 - **`homectl-auth-client`** — unit tests: valid JWT passes middleware, expired JWT triggers refresh, missing token redirects browser requests, `req.user` is populated correctly; mock JWKS server for key fetching tests
 
