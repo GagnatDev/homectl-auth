@@ -1,6 +1,7 @@
 import { runMigrations, closePool } from './db';
 import { createApp } from './app';
 import { logger } from './logger';
+import { startCleanupJob } from './jobs/cleanup';
 
 async function main(): Promise<void> {
   const port = parseInt(process.env['PORT'] ?? '3000', 10);
@@ -8,6 +9,7 @@ async function main(): Promise<void> {
   logger.info('Running database migrations...');
   await runMigrations();
   logger.info('Migrations complete');
+  startCleanupJob();
 
   const app = createApp();
   const server = app.listen(port, () => {

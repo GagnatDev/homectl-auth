@@ -10,6 +10,7 @@ import { tokenRouter } from './routes/token.router';
 import { sessionRouter } from './routes/session.router';
 import { inviteRouter } from './routes/invite.router';
 import { resetPasswordRouter } from './routes/reset-password.router';
+import { adminRouter } from './routes/admin/admin.router';
 
 export function createApp(): Express {
   const app = express();
@@ -41,6 +42,7 @@ export function createApp(): Express {
   app.use(sessionRouter);
   app.use(inviteRouter);
   app.use(resetPasswordRouter);
+  app.use(adminRouter);
 
   return app;
 }
