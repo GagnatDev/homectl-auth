@@ -59,7 +59,8 @@ A centralized authentication service at `auth.homectl.no` that issues signed JWT
 The central service deployed at `auth.homectl.no`. Composed of the following internal modules:
 
 **Token Module**
-- Issues RS256-signed JWTs containing `{ userId, email, isAdmin, apps: [{ appId, role }] }`
+- Issues RS256-signed JWTs containing `{ iss, aud, sub, email, isAdmin, apps: [{ appId, role }], iat, exp }`
+- `iss` is always `https://auth.homectl.no`; `aud` is the `client_id` of the requesting app — bound at token-issue time
 - Access token TTL: 15 minutes
 - Exposes `GET /.well-known/jwks.json` — public key set for consumer verification
 - Private key stored as a Kubernetes Secret, loaded from env at startup
@@ -68,14 +69,24 @@ The central service deployed at `auth.homectl.no`. Composed of the following int
 - Issues opaque refresh tokens (32 random bytes, hex-encoded)
 - Stores SHA256 hash of refresh token in Postgres (never the raw token)
 - Refresh token TTL: 30 days, enforced by `expires_at` column
-- Refresh token delivered as `HttpOnly; Secure; SameSite=Strict` cookie, path `/`, domain `auth.homectl.no`
-- On refresh: validates hash, rotates token (new token issued, old invalidated atomically)
-- On logout: deletes session row
+- **Per-app refresh cookies.** Cookie name is `homectl_refresh_<clientId>` so multiple apps can coexist in the same browser without colliding. Each cookie is `HttpOnly; Secure; SameSite=Strict`, path `/`, domain `auth.homectl.no`. Each session row in Postgres records the `client_id` it was issued for; the access token's `aud` is taken from that `client_id`.
+- **Single sign-on across apps** is handled by a separate `homectl_sso` cookie (also `HttpOnly; Secure; SameSite=Strict`, 30-day TTL, domain `auth.homectl.no`) that records the authenticated user ID. When `/authorize?client_id=appN` is hit and the `homectl_sso` cookie is valid, the auth service skips the login form, verifies the user has access to `appN`, mints a new authorization code, and creates a new app-scoped session — no password re-entry required.
+- On refresh (`POST /refresh` from app's browser): the auth service reads the per-app cookie matching the `Origin` header (CORS-validated), rotates the refresh token (new issued, old invalidated atomically), returns a new access token with `aud = client_id`.
+- On logout (`POST /logout` from app's browser): deletes only the session row for the calling app and clears that app's refresh cookie. Other apps' sessions and the `homectl_sso` cookie are preserved — visiting another app or revisiting this app re-bootstraps without re-login until the SSO cookie expires.
+- **"Log out everywhere"** (future, out of scope for v1): would clear `homectl_sso` and all session rows for the user.
+- `/refresh` and `/logout` endpoints accept cross-origin requests with credentials from registered app origins (CORS allow-list from app config — `Access-Control-Allow-Credentials: true`, exact-origin echo, no wildcard).
 
 **Authorization Code Module**
 - Issues short-lived (5 minute) single-use opaque codes for the login redirect flow
-- Stores SHA256 hash of code in Postgres with `redirect_uri`, `app_id`, `user_id`
-- Code exchange: validates hash, checks expiry and redirect_uri match, deletes code, returns access token
+- Stores SHA256 hash of code in Postgres with `redirect_uri`, `client_id`, `user_id`
+- Code exchange (`POST /token`) requires:
+  - `grant_type=authorization_code`
+  - `code` — the authorization code
+  - `client_id` — must match the code's bound client
+  - `client_secret` — authenticates the calling app (stored as a Kubernetes Secret on the consuming app side; one secret per app)
+  - `redirect_uri` — must match the code's bound redirect URI exactly
+- On success: validates client credentials, validates code (hash, expiry, redirect_uri match, client_id match), deletes code, returns `{ access_token, token_type, expires_in }`
+- The `state` parameter from the authorization request is passed through unchanged in the callback redirect — the client library, not the auth service, verifies it
 
 **User Module**
 - User record: `id`, `email` (unique), `username`, `password_hash` (bcrypt cost 12), `is_admin`, `created_at`, `last_login_at`
@@ -83,20 +94,24 @@ The central service deployed at `auth.homectl.no`. Composed of the following int
 - No email sending; email stored for uniqueness only
 
 **App Access Module**
-- Table: `(user_id, app_id, role)` — composite primary key
+- Table: `(user_id, app_id, role)` — composite primary key (`app_id` corresponds to the `client_id` used in OAuth-style endpoints)
 - App definitions loaded from static config file (YAML/JSON, version-controlled)
 - Config shape:
   ```json
   {
     "id": "travel-journal",
     "name": "Travel Journal",
+    "clientSecretEnv": "TRAVEL_JOURNAL_CLIENT_SECRET",
     "allowedRedirectUris": ["https://reisedagbok.homectl.no/auth/callback"],
+    "allowedOrigins": ["https://reisedagbok.homectl.no"],
     "roles": [
       { "name": "follower", "rank": 1 },
       { "name": "creator", "rank": 2 }
     ]
   }
   ```
+- `clientSecretEnv` names an environment variable holding the bcrypt-hashed client secret (the hash is committed to the cluster as a Kubernetes Secret; the raw secret is only known to the consuming app and is distributed once via secure channel during app onboarding)
+- `allowedOrigins` is the CORS allow-list for that app's browser-side calls to `/refresh` and `/logout`
 - Role ranks are app-defined integers; the auth service treats them as opaque ordinals — no domain meaning is assumed
 - Designed so app definitions can later be moved to a DB table without changing the access module's interface
 
@@ -110,20 +125,37 @@ The central service deployed at `auth.homectl.no`. Composed of the following int
   { "email": "...", "appId": "travel-journal", "role": "follower" }
   ```
   Auth service enforces: `invitee_role.rank < inviter_role.rank` in that app — generic, no domain knowledge required
+- If the inviting user has no access grant for the specified `appId`, the request is rejected with 403 (the rank check has no defined value to compare against)
 - Both flows generate the same short-lived token (24h TTL), hash stored in Postgres
 - Invite link: `auth.homectl.no/invite?token=...`
 - On redemption: user sets password, account activated, app access rows created
-- If the invited email already has an account, the invite instead adds the app access grant to the existing account
+- If the invited email already has an account, the invite instead adds the app access grant to the existing account (password unchanged, no new user row)
+- If the invited email belongs to an account that was created **after** the invite was issued (different user ID than expected), the invite is rejected — protects against a race where a different user claims the email between invite creation and redemption
 
 **Password Reset Module**
 - Admin generates reset link for any existing user
 - Same mechanism as invite: short-lived token (24h), hash stored in Postgres
 - Link: `auth.homectl.no/reset-password?token=...`
-- On redemption: user sets new password, all existing sessions invalidated
+- On redemption: user sets new password; all refresh tokens (rows in `sessions`) for that user are deleted, so subsequent `/refresh` calls fail and the user must re-authenticate
+- **Limitation:** outstanding access tokens (JWTs) remain valid until their `exp` — up to 15 minutes. Stateless JWTs cannot be revoked without a denylist, which is out of scope. This is acceptable for the threat model (small trusted circle, short TTL)
 
 **Admin API**
 - All routes require `isAdmin: true` in JWT
 - Endpoints: list users, get user detail (with app access), grant/revoke app access, create invite, create password reset token
+
+**Public Auth Endpoints (summary)**
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/authorize` | Authorization request — renders login page bound to `client_id`, `redirect_uri`, `state` |
+| `POST` | `/login` | Credential submission; on success, redirects to `redirect_uri` with `code` + `state` |
+| `POST` | `/token` | Authorization code exchange (server-to-server, client-authenticated) |
+| `POST` | `/refresh` | Browser-side: rotates refresh cookie, returns new access token |
+| `POST` | `/logout` | Browser-side: deletes session row, clears refresh cookie |
+| `GET` | `/.well-known/jwks.json` | Public key set |
+| `GET` | `/invite?token=...` | Invite redemption page (set password, accept grants) |
+| `GET` | `/reset-password?token=...` | Password reset page |
+| `POST` | `/api/invites` | Delegated invite creation (Bearer JWT required) |
 
 #### 2. Admin GUI (server-rendered HTML + HTMX)
 
@@ -138,21 +170,59 @@ The central service deployed at `auth.homectl.no`. Composed of the following int
 
 Tables in a dedicated `homectl_auth` schema:
 - `users` — identity and credentials
-- `sessions` — refresh token hashes with expiry and TTL index
+- `sessions` — refresh token hashes with expiry and TTL index; column `client_id` records the app the session was issued for (binds `aud` on subsequent refreshes)
 - `app_access` — `(user_id, app_id, role)` authorization table
-- `invite_tokens` — hashed invite tokens with expiry, pre-assigned email + app grants
+- `invite_tokens` — hashed invite tokens with expiry, pre-assigned email + app grants; column `expected_user_id` (nullable) for invites targeting an existing account, to detect the race described in the Invite Module
 - `authorization_codes` — hashed short-lived codes for login redirect flow
 - `password_reset_tokens` — hashed reset tokens with expiry
 
+**Expired row cleanup.** Single-use rows (`authorization_codes`, `invite_tokens`, `password_reset_tokens`, expired `sessions`) are deleted on use, but expired-but-unused rows accumulate indefinitely. A scheduled internal job runs every hour and executes `DELETE ... WHERE expires_at < NOW() - interval '1 day'` against each table. The grace day lets short-lived debugging inspect expired rows; for `sessions` it is irrelevant because expired refresh tokens fail validation regardless. The job is implemented as an in-process `setInterval` (single replica is sufficient at this scale; a Kubernetes CronJob is a future option if multi-replica is needed).
+
 #### 4. `@gagnatdev/homectl-auth-client` (npm package, GitHub Packages)
 
-A small Express middleware package. Public interface:
+A small package with two entry points — a server-side Express integration and a browser-side helper. The two parts are independent but versioned together.
 
-- `createAuthClient(options)` — factory, configures JWKS URL, auth service base URL, app ID, callback path
-- `authMiddleware` — Express middleware; validates Bearer JWT from Authorization header or attached cookie; populates `req.user`; redirects unauthenticated browser requests to `auth.homectl.no/login`
-- `callbackHandler` — Express route handler for `/auth/callback`; exchanges authorization code for access token; stores access token in memory; sets up silent refresh
-- JWKS fetching: uses `jwks-rsa` library; caches public key; handles key rotation transparently
-- Silent refresh: on 401 from any app API call, POSTs to `auth.homectl.no/refresh` with credentials (refresh cookie auto-sent by browser); retries original request
+**Server-side entry point: `@gagnatdev/homectl-auth-client/server`**
+
+- `createAuthClient(options)` — factory. Required options:
+  - `authServiceUrl` — e.g. `https://auth.homectl.no`
+  - `jwksUrl` — derived by default as `${authServiceUrl}/.well-known/jwks.json`
+  - `clientId` — the app's registered identifier (e.g. `"travel-journal"`)
+  - `clientSecret` — read from env in the consuming app; sent on token exchange
+  - `appBaseUrl` — the public-facing URL of the consuming app (e.g. `https://reisedagbok.homectl.no`); used to construct `redirect_uri` reliably without depending on `req.hostname`
+  - `callbackPath` — default `/auth/callback`
+- `authMiddleware` — Express middleware. Validates Bearer JWT:
+  - Verifies signature via cached JWKS
+  - Verifies `iss === authServiceUrl`
+  - Verifies `aud === clientId` (rejects tokens issued for a different app)
+  - Verifies `exp` is in the future
+  - Verifies `apps[]` includes an entry for `clientId` (extracts the role)
+  - Populates `req.user = { id, email, isAdmin, role }` (role is the role for this app)
+  - On unauthenticated browser requests (HTML accept header): generates a random `state` nonce, stores it in a short-lived signed cookie on the app's domain, redirects to `${authServiceUrl}/authorize?response_type=code&client_id=${clientId}&redirect_uri=${appBaseUrl}${callbackPath}&state=${nonce}`
+  - On unauthenticated API requests: returns 401 (browser-side helper will refresh and retry)
+- `callbackHandler` — Express route handler for `callbackPath`. Reads `code` and `state` from query; verifies `state` matches the cookie value, deletes the cookie; POSTs to `${authServiceUrl}/token` with `{ grant_type, code, client_id, client_secret, redirect_uri }`; on success, redirects the browser back to the originally requested URL (stored in the state cookie payload) or to `appBaseUrl/`. The exchanged access token is discarded — the refresh cookie is now set on `auth.homectl.no`, and the browser will bootstrap an access token via `/refresh` on first page load.
+- `logoutHandler` — Express route handler for `/auth/logout`. Renders a page that calls `${authServiceUrl}/logout` from the browser (cookies included), then redirects to `appBaseUrl/`.
+- JWKS fetching: uses `jwks-rsa`; caches public keys in memory; re-fetches on unknown `kid` (zero-downtime key rotation).
+
+**Browser-side entry point: `@gagnatdev/homectl-auth-client/browser`**
+
+- `createAuthBrowserClient({ authServiceUrl })` — factory.
+- `bootstrap()` — on app load, POSTs to `${authServiceUrl}/refresh` with `credentials: "include"`. On success, stores the returned access token in an in-memory variable. On 401, returns null — caller redirects to login.
+- `getAccessToken()` — returns the in-memory token (or null).
+- `authedFetch(input, init)` — wrapper around `fetch` that attaches `Authorization: Bearer ${token}`; on 401, calls `bootstrap()` once and retries; on the second 401, surfaces the error.
+- `logout()` — POSTs to `${authServiceUrl}/logout` with credentials, clears the in-memory token.
+
+**Access token storage model — explicit decision**
+
+The access token lives in **browser-side JS memory only**. Rationale:
+- Mirrors the existing pattern in `travel-journal` — minimizes per-app integration churn
+- Avoids server-side session state, sticky sessions, and shared session stores in the consuming app
+- The HttpOnly refresh cookie on `auth.homectl.no` (sent cross-origin via `credentials: "include"`) re-bootstraps the access token on page reload, so no token is persisted in browser storage and XSS exposure is bounded to the lifetime of an open tab
+- The auth service's `/refresh` and `/logout` endpoints emit `Access-Control-Allow-Origin: <app-origin>` (allow-list from app config) and `Access-Control-Allow-Credentials: true` to permit the cross-origin call
+
+**Hard reload behavior.** A page reload (or new tab to the same app) does **not** prompt for a password. The in-memory access token is lost, but the `homectl_refresh_<clientId>` cookie on `auth.homectl.no` survives — cookies are not affected by reloads. On app startup the browser helper calls `bootstrap()`, which does a single `/refresh` round-trip and seeds a fresh access token. The user sees a brief loading state (typically <100ms) instead of the unauthenticated UI; this requires the consuming app to gate identity-dependent rendering on the bootstrap promise (already the pattern in `travel-journal`'s `AuthContext`). A password prompt only appears when the refresh cookie has expired (30-day TTL), the session row has been deleted (admin password reset, future "log out everywhere"), or the browser has cleared cookies.
+
+This rules out SSR for protected pages in consuming apps. Page rendering that depends on the user's identity must occur after `bootstrap()` resolves on the client. This is consistent with the SPA pattern already in use.
 
 #### 5. Kubernetes Deployment
 
@@ -164,33 +234,80 @@ A small Express middleware package. Public interface:
 ### Login Flow (Authorization Code)
 
 ```
-1. User hits protected route on app1.homectl.no (unauthenticated)
-2. authMiddleware redirects → auth.homectl.no/login?app_id=app1&redirect_uri=https://app1.homectl.no/auth/callback
-3. User submits username + password
-4. Auth service validates credentials, checks app access
-5. Auth service generates authorization code, stores hash
-6. Auth service redirects → app1.homectl.no/auth/callback?code=<code>
-7. callbackHandler (server-side) POSTs code + redirect_uri to auth.homectl.no/token
-8. Auth service validates code, returns { accessToken }
-9. App stores accessToken in memory; refresh cookie already set on auth.homectl.no
-10. Subsequent requests: Bearer <accessToken> in Authorization header
-11. On 401: POST auth.homectl.no/refresh (credentials: include) → new accessToken
+ 1. Browser hits protected route on app1.homectl.no (unauthenticated)
+ 2. authMiddleware generates random `state` nonce, stores it (plus the original request URL)
+    in a short-lived signed cookie on app1.homectl.no
+ 3. authMiddleware redirects browser →
+      auth.homectl.no/authorize
+        ?response_type=code
+        &client_id=app1
+        &redirect_uri=https://app1.homectl.no/auth/callback
+        &state=<nonce>
+ 4. Auth service renders login page bound to client_id, validates redirect_uri against
+    the app's allowedRedirectUris allow-list
+ 5. User submits username + password to auth.homectl.no/login
+    (skipped on subsequent app logins: if a valid `homectl_sso` cookie is present at
+    step 4 and the user has access to `client_id`, jump directly to step 6)
+ 6. Auth service validates credentials, verifies user has access to the requested client_id,
+    sets `homectl_sso` cookie (if not already set) and per-app `homectl_refresh_<client_id>`
+    cookie on auth.homectl.no, creates session row bound to `client_id`,
+    generates authorization code
+ 7. Auth service redirects browser →
+      app1.homectl.no/auth/callback?code=<code>&state=<nonce>
+ 8. callbackHandler reads state cookie, verifies the `state` query parameter matches,
+    deletes the cookie (single-use, CSRF defense)
+ 9. callbackHandler POSTs server-to-server to auth.homectl.no/token:
+      { grant_type: "authorization_code", code, client_id, client_secret, redirect_uri }
+10. Auth service validates client credentials, validates code (hash, expiry, redirect_uri,
+    client_id match), deletes code, returns { access_token, token_type, expires_in }
+11. callbackHandler discards the access token (its only role here is to confirm the code
+    was valid for this client), redirects browser to the original request URL
+12. Browser-side helper on page load calls auth.homectl.no/refresh
+    (credentials: include — refresh cookie auto-sent), receives new access token,
+    stores it in JS memory
+13. Subsequent API calls from browser include `Authorization: Bearer <accessToken>`;
+    authMiddleware on the app's backend validates the JWT locally
+14. On 401: browser helper calls /refresh, retries the original request
+```
+
+### Logout Flow
+
+```
+ 1. User clicks "Log out" in app1
+ 2. Browser-side helper POSTs to auth.homectl.no/logout (credentials: include)
+ 3. Auth service deletes the session row, clears the refresh cookie
+ 4. Browser-side helper clears the in-memory access token
+ 5. App optionally redirects to a public page
+
+Notes:
+- Logout is per-session, which is effectively per-app (sessions are app-scoped, see
+  Session Module). Logging out of app1 does not invalidate app2's session — this is
+  intentional. To log out of every app at once, a future "log out everywhere"
+  endpoint can delete all sessions for the user (out of scope for v1).
+- Outstanding access tokens remain valid until expiry (up to 15 minutes). See the
+  revocation lag note in Further Notes.
 ```
 
 ### JWT Payload Shape
 
 ```json
 {
+  "iss": "https://auth.homectl.no",
+  "aud": "travel-journal",
   "sub": "<userId>",
   "email": "user@example.com",
   "isAdmin": false,
   "apps": [
-    { "appId": "travel-journal", "role": "member" }
+    { "appId": "travel-journal", "role": "creator" }
   ],
   "iat": 1234567890,
   "exp": 1234568790
 }
 ```
+
+- `iss` — the auth service base URL; verified by every consumer
+- `aud` — the `client_id` the token was issued for; consumers must reject any token whose `aud` does not equal their own configured `clientId`
+- `apps` — every app the user has access to. App A's token reveals the user also belongs to App B. **Accepted trade-off:** for a small trusted-circle homelab, the simplicity of one token per session outweighs the disclosure (the alternative — per-app token exchange, narrowed claims — adds round trips and complexity for no real-world gain at this scale). Consumers MUST still enforce `aud` to prevent token substitution; the `apps` array is informational/authorization-only.
 
 ### Key Distribution
 
@@ -204,12 +321,17 @@ A small Express middleware package. Public interface:
 
 **Modules to test:**
 
-- **Token Module** — unit tests: sign a token, verify it decodes correctly, verify wrong algorithm is rejected, verify expired token is rejected
-- **Session Module** — integration tests: create session, refresh rotates token, old token rejected after rotation, expired session rejected
-- **Authorization Code Module** — integration tests: code exchange succeeds once, second exchange rejected, expired code rejected, mismatched redirect_uri rejected
-- **Invite Module** — integration tests: valid admin invite creates user + app access, valid delegated invite respects rank ceiling (invitee rank < inviter rank), invite at equal or higher rank rejected, expired invite rejected, reused invite rejected, invite to existing account adds app access without creating duplicate user
-- **Auth endpoints** — integration tests against a test Postgres instance, covering the full login → refresh → logout cycle; mirrors the pattern in `travel-journal/packages/server`
-- **`homectl-auth-client`** — unit tests: valid JWT passes middleware, expired JWT triggers refresh, missing token redirects browser requests, `req.user` is populated correctly; mock JWKS server for key fetching tests
+- **Token Module** — unit tests: sign a token, verify it decodes correctly with `iss` and `aud` populated, verify wrong algorithm is rejected, verify expired token is rejected, verify token with wrong `aud` is rejected by consumer validation, verify token with wrong `iss` is rejected
+- **Session Module** — integration tests: create session, refresh rotates token, old token rejected after rotation, expired session rejected, per-app refresh cookies isolate (logout from app1 leaves app2's session valid), SSO short-circuit at `/authorize` (valid `homectl_sso` cookie skips login form)
+- **Authorization Code Module** — integration tests: code exchange succeeds once, second exchange rejected, expired code rejected, mismatched redirect_uri rejected, missing `client_secret` rejected (401), wrong `client_secret` rejected (401), mismatched `client_id` rejected
+- **State / CSRF on callback** — integration tests at the client-package level: missing `state` cookie rejects callback, mismatched `state` rejects callback, state cookie is single-use (cleared on use)
+- **Invite Module** — integration tests: valid admin invite creates user + app access, valid delegated invite respects rank ceiling (invitee rank < inviter rank), invite at equal or higher rank rejected, delegated invite where inviter has no role in target app rejected (403), expired invite rejected, reused invite rejected, invite to existing account adds app access without creating duplicate user, invite redemption rejected if email belongs to a different (newer) user than expected
+- **Password Reset Module** — integration tests: reset deletes all sessions for the user, outstanding JWTs are NOT invalidated (documented behavior), reused/expired reset tokens rejected
+- **Auth endpoints** — integration tests against a test Postgres instance, covering the full authorize → login → callback → refresh → logout cycle including state round-trip and per-app refresh cookie semantics; mirrors the pattern in `travel-journal/packages/server`
+- **CORS** — integration tests: `/refresh` and `/logout` accept requests with credentials from origins in app config, reject requests from unknown origins
+- **Expired row cleanup** — unit test: cleanup query selects only rows with `expires_at < NOW() - interval '1 day'`; integration: cleanup deletes the expected rows and leaves fresh ones alone
+- **`homectl-auth-client` (server)** — unit tests: valid JWT passes middleware, JWT with wrong `aud` rejected, JWT with wrong `iss` rejected, expired JWT returns 401 on API request and triggers redirect on browser request, missing token redirects browser requests with `state` cookie set, `req.user` is populated correctly with `role` for the configured `clientId`; mock JWKS server for key fetching tests
+- **`homectl-auth-client` (browser)** — unit tests: `bootstrap()` stores token on success, returns null on 401, `authedFetch` retries once on 401 then surfaces error, `logout()` clears local token
 
 **Prior art:** `travel-journal/packages/server` — integration test patterns with Vitest + supertest against a test database.
 
@@ -232,3 +354,5 @@ A small Express middleware package. Public interface:
 - When migrating an existing app (e.g. travel-journal), the old per-app auth and the new centralized auth can coexist during transition. The old `/api/v1/auth` routes can be removed once all users have been migrated and the new flow is verified in production.
 - The RS256 private key should be rotated periodically. The JWKS endpoint supports multiple keys via `kid` (key ID), enabling zero-downtime rotation: add the new key to the JWKS response before switching signing to it, then remove the old key after existing tokens have expired (15 minutes).
 - App config (static file) should include a human-readable `name` field used in the admin GUI and on the login page ("You are logging in to **Travel Journal**").
+- **Access revocation lag.** Revoking a user's app access (or admin status) via the admin panel takes effect within one access token TTL — up to 15 minutes — because outstanding JWTs cannot be invalidated. The user remains effective until their current token expires; the next `/refresh` will fail to mint a new token for the revoked app. A token denylist would close this gap but is out of scope.
+- **OAuth2 alignment.** The flow uses standard OAuth2 names (`response_type=code`, `client_id`, `client_secret`, `state`, `grant_type=authorization_code`) and standard JWT claims (`iss`, `aud`, `sub`, `iat`, `exp`) so that future migration to a standards-compliant IdP would be mechanical rather than a redesign. The deliberate deviations from OAuth 2.1 / OIDC are: no PKCE (covered by client authentication), no separate ID token (one JWT carries both identity and authorization claims), no `/.well-known/openid-configuration` discovery (apps configure URLs statically), no `scope=openid` (replaced by the `apps` array). These are acceptable for a bespoke single-operator service.
