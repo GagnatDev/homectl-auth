@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: homectl-auth
-          image: rg.nl-ams.scw.cloud/homectl/homectl-auth:latest
+          image: rg.fr-par.scw.cloud/homectl/homectl-auth:$IMAGE_TAG
           ports:
             - containerPort: 3000
           env:

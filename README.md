@@ -198,18 +198,21 @@ const res = await auth.authedFetch('/api/data');
 
 ## Kubernetes Deployment
 
+CI/CD (`push` to `main`) handles all deploys automatically — `build` pushes the image, `deploy` runs `kubectl apply -f k8s/` with the image tag substituted in.
+
+For a first-time bootstrap or a manual deploy:
+
 ```bash
-# Create namespace (first time)
+# Create namespace (first time only)
 kubectl create namespace homectl
 
 # Apply secrets (fill in real values first — see k8s/secrets.yaml comments)
 kubectl apply -f k8s/secrets.yaml
 
-# Apply config
+# Substitute the image tag and apply all manifests
+export IMAGE_TAG=<git-sha>
+sed "s|\$IMAGE_TAG|$IMAGE_TAG|g" k8s/deployment.yaml | kubectl apply -f -
 kubectl apply -f k8s/configmap.yaml
-
-# Apply workloads
-kubectl apply -f k8s/deployment.yaml
 kubectl apply -f k8s/service.yaml
 kubectl apply -f k8s/ingress.yaml
 ```
@@ -226,8 +229,11 @@ kubectl apply -f k8s/ingress.yaml
 
 | Secret | Description |
 |---|---|
+| `SCW_ACCESS_KEY` | Scaleway IAM access key |
 | `SCW_SECRET_KEY` | Scaleway IAM secret key (for registry push) |
-| `KUBECONFIG` | Base64-encoded kubeconfig for cluster access |
+| `SCW_ORGANIZATION_ID` | Scaleway organization ID |
+| `SCW_PROJECT_ID` | Scaleway project ID |
+| `K8S_CLUSTER_ID` | Scaleway Kubernetes cluster ID (kubeconfig is fetched at deploy time) |
 
 ---
 
