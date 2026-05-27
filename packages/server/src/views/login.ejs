@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Log in — <%= appName %></title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.1);
+      padding: 2rem;
+      width: 100%;
+      max-width: 360px;
+    }
+    h1 { font-size: 1.25rem; margin-bottom: .25rem; }
+    .subtitle { color: #666; font-size: .875rem; margin-bottom: 1.5rem; }
+    label { display: block; font-size: .875rem; font-weight: 500; margin-bottom: .25rem; }
+    input[type="text"], input[type="password"] {
+      width: 100%; padding: .5rem .75rem; border: 1px solid #ccc;
+      border-radius: 4px; font-size: 1rem; margin-bottom: 1rem;
+    }
+    button {
+      width: 100%; padding: .625rem; background: #2563eb; color: #fff;
+      border: none; border-radius: 4px; font-size: 1rem; cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    .error { color: #dc2626; font-size: .875rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Log in</h1>
+    <p class="subtitle">You are logging in to <strong><%= appName %></strong></p>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <p class="error"><%= error %></p>
+    <% } %>
+
+    <form method="POST" action="/login">
+      <input type="hidden" name="client_id"    value="<%= clientId %>">
+      <input type="hidden" name="redirect_uri" value="<%= redirectUri %>">
+      <input type="hidden" name="state"        value="<%= state %>">
+
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" autocomplete="username" required>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+      <button type="submit">Log in</button>
+    </form>
+  </div>
+</body>
+</html>
