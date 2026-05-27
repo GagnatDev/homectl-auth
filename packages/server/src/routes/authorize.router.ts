@@ -8,10 +8,16 @@
 import { Router, type IRouter } from 'express';
 import { join } from 'path';
 import { getApp, validateRedirectUri } from '../config/apps';
-import { findUserByEmail } from '../modules/user/user.repository';
 import { verifyPassword } from '../modules/user/password.service';
 import { issueCode } from '../modules/auth-code/auth-code.service';
 import { hasAccess } from '../modules/app-access/app-access.repository';
+import {
+  createSession,
+  setRefreshCookie,
+  setSsoCookie,
+  getSsoCookieValue,
+} from '../modules/session/session.service';
+import { findUserById } from '../modules/user/user.repository';
 import express from 'express';
 
 export const authorizeRouter: IRouter = Router();
@@ -21,7 +27,7 @@ const VIEWS_DIR = join(__dirname, '..', 'views');
 
 // ── GET /authorize ─────────────────────────────────────────────────────────
 
-authorizeRouter.get('/authorize', (req, res) => {
+authorizeRouter.get('/authorize', async (req, res) => {
   const { client_id, redirect_uri, state, response_type } = req.query as Record<string, string>;
 
   if (response_type !== 'code') {
@@ -38,6 +44,32 @@ authorizeRouter.get('/authorize', (req, res) => {
   if (!redirect_uri || !validateRedirectUri(app, redirect_uri)) {
     res.status(400).json({ error: 'invalid_redirect_uri' });
     return;
+  }
+
+  // SSO short-circuit: if the user already has a valid sso cookie and access to this app,
+  // skip the login form and redirect directly with a new authorization code.
+  const ssoCookieUserId = getSsoCookieValue(req.cookies as Record<string, string>);
+  if (ssoCookieUserId) {
+    const allowed = await hasAccess(ssoCookieUserId, client_id);
+    if (allowed) {
+      const user = await findUserById(ssoCookieUserId);
+      if (user) {
+        const rawToken = await createSession(ssoCookieUserId, client_id);
+        setRefreshCookie(res, client_id, rawToken);
+
+        const { code } = await issueCode({
+          userId: ssoCookieUserId,
+          clientId: client_id,
+          redirectUri: redirect_uri,
+        });
+
+        const callbackUrl = new URL(redirect_uri);
+        callbackUrl.searchParams.set('code', code);
+        if (state) callbackUrl.searchParams.set('state', state);
+        res.redirect(302, callbackUrl.toString());
+        return;
+      }
+    }
   }
 
   res.render('login', {
@@ -119,6 +151,16 @@ authorizeRouter.post('/login', express.urlencoded({ extended: false }), async (r
 
   // Issue authorization code
   const { code } = await issueCode({ userId, clientId: client_id, redirectUri: redirect_uri });
+
+  // Create session — sets per-app refresh cookie
+  const rawToken = await createSession(userId, client_id);
+  setRefreshCookie(res, client_id, rawToken);
+
+  // Set SSO cookie if not already set
+  const existingSso = getSsoCookieValue(req.cookies as Record<string, string>);
+  if (!existingSso) {
+    setSsoCookie(res, userId);
+  }
 
   // Redirect to callback
   const callbackUrl = new URL(redirect_uri);

@@ -80,6 +80,7 @@ export async function truncateTables(): Promise<void> {
   await pool.query(`
     TRUNCATE TABLE
       homectl_auth.authorization_codes,
+      homectl_auth.sessions,
       homectl_auth.app_access,
       homectl_auth.users
     RESTART IDENTITY CASCADE

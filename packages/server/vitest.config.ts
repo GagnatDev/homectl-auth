@@ -8,5 +8,13 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    // All test files share a single Postgres container — run sequentially to
+    // prevent concurrent truncate/insert races between test files.
+    pool: 'threads',
+    poolOptions: {
+      threads: {
+        singleThread: true,
+      },
+    },
   },
 });

@@ -7,6 +7,7 @@ import { logger } from './logger';
 import { jwksRouter } from './routes/jwks.router';
 import { authorizeRouter } from './routes/authorize.router';
 import { tokenRouter } from './routes/token.router';
+import { sessionRouter } from './routes/session.router';
 
 export function createApp(): Express {
   const app = express();
@@ -35,6 +36,7 @@ export function createApp(): Express {
   // ── Auth flow ─────────────────────────────────────────────────────────────
   app.use(authorizeRouter);
   app.use(tokenRouter);
+  app.use(sessionRouter);
 
   return app;
 }
