@@ -10,9 +10,9 @@ importers:
 
   packages/client:
     dependencies:
-      express:
-        specifier: ^4.x
-        version: 4.22.2
+      cookie:
+        specifier: ^0.6.0
+        version: 0.6.0
       jose:
         specifier: ^5.2.4
         version: 5.10.0
@@ -20,12 +20,30 @@ importers:
         specifier: ^3.1.0
         version: 3.2.2
     devDependencies:
+      '@types/cookie':
+        specifier: ^0.6.0
+        version: 0.6.0
+      '@types/cookie-parser':
+        specifier: ^1.4.7
+        version: 1.4.10(@types/express@4.17.25)
       '@types/express':
         specifier: ^4.17.21
         version: 4.17.25
       '@types/node':
         specifier: ^20.12.0
         version: 20.19.41
+      '@types/supertest':
+        specifier: ^6.0.2
+        version: 6.0.3
+      cookie-parser:
+        specifier: ^1.4.6
+        version: 1.4.7
+      express:
+        specifier: ^4.19.2
+        version: 4.22.2
+      supertest:
+        specifier: ^7.0.0
+        version: 7.2.2
       typescript:
         specifier: ^5.4.5
         version: 5.9.3
@@ -642,6 +660,9 @@ packages:
     peerDependencies:
       '@types/express': '*'
 
+  '@types/cookie@0.6.0':
+    resolution: {integrity: sha512-4Kh9a6B2bQciAhf7FSuMRRkUWecJgJu9nPnx3yzpsfXX/c50REIqpHY4C82bXP90qrLtXtkDxTZosYO3UpOwlA==}
+
   '@types/cookiejar@2.1.5':
     resolution: {integrity: sha512-he+DHOWReW0nghN24E1WUqM0efK4kI9oTqDm6XmK8ZPe2djZ90BSNdGnIyCLzCPw7/pogPlGbzI2wHGGmi4O/Q==}
 
@@ -969,6 +990,10 @@ packages:
   cookie-signature@1.2.2:
     resolution: {integrity: sha512-D76uU73ulSXrD1UXF4KE2TMxVVwhsnCgfAyTg9k8P6KGZjlXKrOLe4dJQKI3Bxi5wjesZoFXJWElNWBjPZMbhg==}
     engines: {node: '>=6.6.0'}
+
+  cookie@0.6.0:
+    resolution: {integrity: sha512-U71cyTamuh1CRNCfpGY6to28lxvNwPG4Guz/EVjgf3Jmzv0vlDp1atT9eS5dDjMYHucpHbWns6Lwf3BKz6svdw==}
+    engines: {node: '>= 0.6'}
 
   cookie@0.7.2:
     resolution: {integrity: sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==}
@@ -2303,6 +2328,8 @@ snapshots:
     dependencies:
       '@types/express': 4.17.25
 
+  '@types/cookie@0.6.0': {}
+
   '@types/cookiejar@2.1.5': {}
 
   '@types/cors@2.8.19':
@@ -2671,6 +2698,8 @@ snapshots:
   cookie-signature@1.0.7: {}
 
   cookie-signature@1.2.2: {}
+
+  cookie@0.6.0: {}
 
   cookie@0.7.2: {}
 
