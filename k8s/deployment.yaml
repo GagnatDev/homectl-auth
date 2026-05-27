@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homectl-auth
+  namespace: homectl
+  labels:
+    app: homectl-auth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: homectl-auth
+  template:
+    metadata:
+      labels:
+        app: homectl-auth
+    spec:
+      containers:
+        - name: homectl-auth
+          image: rg.nl-ams.scw.cloud/homectl/homectl-auth:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            - name: POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: homectl-auth-secrets
+                  key: POSTGRES_URL
+            - name: RS256_PRIVATE_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  name: homectl-auth-secrets
+                  key: RS256_PRIVATE_KEY_PEM
+            # Per-app client secret hashes — add one entry per registered app
+            - name: TRAVEL_JOURNAL_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homectl-auth-secrets
+                  key: TRAVEL_JOURNAL_CLIENT_SECRET
+          volumeMounts:
+            - name: apps-config
+              mountPath: /app/apps.json
+              subPath: apps.json
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: apps-config
+          configMap:
+            name: homectl-auth-apps

@@ -1,0 +1,23 @@
+# ConfigMap holding the apps.json configuration.
+# Edit the data.apps.json field to reflect your registered applications.
+# Changes require a pod restart (rollout restart) to take effect.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homectl-auth-apps
+  namespace: homectl
+data:
+  apps.json: |
+    [
+      {
+        "id": "travel-journal",
+        "name": "Travel Journal",
+        "clientSecretEnv": "TRAVEL_JOURNAL_CLIENT_SECRET",
+        "allowedRedirectUris": ["https://reisedagbok.homectl.no/auth/callback"],
+        "allowedOrigins": ["https://reisedagbok.homectl.no"],
+        "roles": [
+          { "name": "follower", "rank": 1 },
+          { "name": "creator", "rank": 2 }
+        ]
+      }
+    ]

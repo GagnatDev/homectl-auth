@@ -1,0 +1,13 @@
+[
+  {
+    "id": "travel-journal",
+    "name": "Travel Journal",
+    "clientSecretEnv": "TRAVEL_JOURNAL_CLIENT_SECRET",
+    "allowedRedirectUris": ["https://reisedagbok.homectl.no/auth/callback"],
+    "allowedOrigins": ["https://reisedagbok.homectl.no"],
+    "roles": [
+      { "name": "follower", "rank": 1 },
+      { "name": "creator", "rank": 2 }
+    ]
+  }
+]

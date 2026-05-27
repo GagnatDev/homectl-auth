@@ -1,0 +1,9 @@
+node_modules
+packages/*/node_modules
+packages/*/dist
+.git
+.env*
+*.md
+docs/
+k8s/
+.github/

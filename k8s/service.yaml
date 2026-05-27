@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: homectl-auth
+  namespace: homectl
+  labels:
+    app: homectl-auth
+spec:
+  selector:
+    app: homectl-auth
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+  type: ClusterIP
