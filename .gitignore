@@ -1,1 +1,7 @@
 .temp
+node_modules/
+packages/*/node_modules/
+packages/*/dist/
+.env.local
+packages/*/.env.local
+*.env.local
