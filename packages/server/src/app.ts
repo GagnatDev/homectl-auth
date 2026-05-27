@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import pinoHttp from 'pino-http';
 import { logger } from './logger';
+import { jwksRouter } from './routes/jwks.router';
 
 export function createApp(): Express {
   const app = express();
@@ -20,6 +21,9 @@ export function createApp(): Express {
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
   });
+
+  // ── JWKS ──────────────────────────────────────────────────────────────────
+  app.use(jwksRouter);
 
   return app;
 }
