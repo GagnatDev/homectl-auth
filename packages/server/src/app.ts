@@ -8,6 +8,8 @@ import { jwksRouter } from './routes/jwks.router';
 import { authorizeRouter } from './routes/authorize.router';
 import { tokenRouter } from './routes/token.router';
 import { sessionRouter } from './routes/session.router';
+import { inviteRouter } from './routes/invite.router';
+import { resetPasswordRouter } from './routes/reset-password.router';
 
 export function createApp(): Express {
   const app = express();
@@ -37,6 +39,8 @@ export function createApp(): Express {
   app.use(authorizeRouter);
   app.use(tokenRouter);
   app.use(sessionRouter);
+  app.use(inviteRouter);
+  app.use(resetPasswordRouter);
 
   return app;
 }
