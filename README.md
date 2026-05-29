@@ -198,24 +198,21 @@ const res = await auth.authedFetch('/api/data');
 
 ## Kubernetes Deployment
 
-CI/CD (`push` to `main`) handles all deploys automatically — `build` pushes the image, `deploy` runs `kubectl apply -f k8s/` with the image tag substituted in.
+CI/CD (`push` to `main`) handles everything: build and push the image, substitute the image tag in `deployment.yaml`, and apply all manifests under `k8s/`. The `homectl` namespace is managed by `homectl-infra` and must exist before the first deploy.
 
-For a first-time bootstrap or a manual deploy:
+### First-time bootstrap
+
+The only manual step is creating the `homectl-auth-secrets` Secret with real values. See `secrets.example.yaml` for the expected keys.
 
 ```bash
-# Create namespace (first time only)
-kubectl create namespace homectl
-
-# Apply secrets (fill in real values first — see k8s/secrets.yaml comments)
-kubectl apply -f k8s/secrets.yaml
-
-# Substitute the image tag and apply all manifests
-export IMAGE_TAG=<git-sha>
-sed "s|\$IMAGE_TAG|$IMAGE_TAG|g" k8s/deployment.yaml | kubectl apply -f -
-kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/service.yaml
-kubectl apply -f k8s/ingress.yaml
+kubectl create secret generic homectl-auth-secrets \
+  --namespace homectl \
+  --from-literal=POSTGRES_URL='postgres://user:pass@host:5432/db' \
+  --from-literal=RS256_PRIVATE_KEY_PEM="$(base64 -w0 < private_key.pem)" \
+  --from-literal=TRAVEL_JOURNAL_CLIENT_SECRET='$2b$12$...'
 ```
+
+Subsequent deploys are fully automated — just push to `main`.
 
 ### Required secrets (in cluster)
 
