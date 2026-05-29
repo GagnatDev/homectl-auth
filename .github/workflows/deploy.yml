@@ -1,17 +1,17 @@
 name: Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
+    types: [completed]
 
 permissions: {}
 
 jobs:
   build:
     name: Build → Push
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read  # checkout
@@ -57,9 +57,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v5
 
       - name: Setup Scaleway CLI and get kubeconfig
         uses: scaleway/action-scw@v0
