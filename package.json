@@ -5,5 +5,8 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r build"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["cpu-features", "esbuild", "protobufjs", "ssh2"]
   }
 }
