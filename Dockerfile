@@ -1,7 +1,7 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 WORKDIR /app
 
@@ -20,10 +20,10 @@ RUN pnpm --filter @homectl/server build
 RUN pnpm --filter @gagnatdev/homectl-auth-client build
 
 # Prune dev dependencies
-RUN pnpm --filter @homectl/server deploy --prod /app/deploy
+RUN pnpm --filter @homectl/server deploy --prod --legacy /app/deploy
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 
 WORKDIR /app
 
