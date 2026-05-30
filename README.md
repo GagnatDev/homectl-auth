@@ -214,8 +214,8 @@ The package is published to GitHub Packages. Consuming repos need a one-time con
 
 **Authenticate.** GitHub Packages requires a token even for read access:
 
-- _Local dev:_ create a [Personal Access Token](https://github.com/settings/tokens) with `read:packages` scope, then set `GITHUB_TOKEN=<your-pat>` in your shell or `.env.local` (never commit it).
-- _CI:_ add the PAT as a repo secret (`NPM_TOKEN` is a common name), then expose it in the install step:
+- _Local dev:_ run `npm login --registry=https://npm.pkg.github.com` and use a [Personal Access Token](https://github.com/settings/tokens) with `read:packages` scope as the password. This stores credentials in `~/.npmrc` so no env var is needed.
+- _CI:_ add the PAT as a repo secret. Use a name like `NPM_TOKEN`. Expose it in the install step:
   ```yaml
   - name: Install dependencies
     run: pnpm install --frozen-lockfile
