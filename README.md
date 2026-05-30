@@ -117,6 +117,52 @@ PostgreSQL
 
 ---
 
+## Publishing the Client Package
+
+Publishing is triggered by pushing a Git tag matching `client-v*`. The publish workflow (`.github/workflows/publish.yml`) builds and publishes `@gagnatdev/homectl-auth-client` to GitHub Packages automatically — no manual `npm publish` needed.
+
+### Versioning
+
+Use [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`.
+
+| Change type | Version bump | Example |
+|---|---|---|
+| Breaking API change | MAJOR | `0.x.x` → `1.0.0` |
+| New backwards-compatible feature | MINOR | `1.0.x` → `1.1.0` |
+| Bug fix, internal change | PATCH | `1.1.x` → `1.1.1` |
+
+While the package is in initial development (`0.x.x`), minor bumps may include breaking changes.
+
+### How to publish a new version
+
+1. **Update the version** in `packages/client/package.json`:
+   ```bash
+   # From the repo root
+   pnpm --filter @gagnatdev/homectl-auth-client version minor  # or major / patch
+   ```
+
+2. **Commit the version bump:**
+   ```bash
+   git add packages/client/package.json
+   git commit -m "chore(client): bump to 1.1.0"
+   ```
+
+3. **Tag and push:**
+   ```bash
+   git tag client-v1.1.0
+   git push origin main --tags
+   ```
+
+The `publish` workflow triggers on the tag, builds the package, and publishes it to GitHub Packages. Check the [Actions tab](../../actions/workflows/publish.yml) to confirm it succeeded.
+
+### Checklist before publishing
+
+- [ ] All changes are merged to `main` and CI is green
+- [ ] Version in `packages/client/package.json` matches the tag you're about to create
+- [ ] Breaking changes are documented (bump MAJOR, update consuming apps)
+
+---
+
 ## Integrating a New App
 
 ### 1. Register the app
@@ -157,8 +203,29 @@ Add the env var reference to `k8s/deployment.yaml`.
 
 ### 3. Install the client package
 
+The package is published to GitHub Packages. Consuming repos need a one-time config so npm/pnpm knows to fetch `@gagnatdev/*` from GitHub instead of the public registry.
+
+**In the consuming repo, add (or append to) `.npmrc`:**
+
+```
+@gagnatdev:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+```
+
+**Authenticate.** GitHub Packages requires a token even for read access:
+
+- _Local dev:_ create a [Personal Access Token](https://github.com/settings/tokens) with `read:packages` scope, then set `GITHUB_TOKEN=<your-pat>` in your shell or `.env.local` (never commit it).
+- _CI:_ add the PAT as a repo secret (`NPM_TOKEN` is a common name), then expose it in the install step:
+  ```yaml
+  - name: Install dependencies
+    run: pnpm install --frozen-lockfile
+    env:
+      GITHUB_TOKEN: ${{ secrets.NPM_TOKEN }}
+  ```
+
+**Then install:**
+
 ```bash
-# In your consuming app:
 pnpm add @gagnatdev/homectl-auth-client
 ```
 
