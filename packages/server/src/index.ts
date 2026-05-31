@@ -2,6 +2,7 @@ import { runMigrations, closePool } from './db';
 import { createApp } from './app';
 import { logger } from './logger';
 import { startCleanupJob } from './jobs/cleanup';
+import { loadKeys } from './modules/token/token.service';
 
 async function main(): Promise<void> {
   const port = parseInt(process.env['PORT'] ?? '3000', 10);
@@ -9,6 +10,8 @@ async function main(): Promise<void> {
   logger.info('Running database migrations...');
   await runMigrations();
   logger.info('Migrations complete');
+
+  await loadKeys();
   startCleanupJob();
 
   const app = createApp();
