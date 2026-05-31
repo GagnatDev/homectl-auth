@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: homectl_auth
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: homectl_auth
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U homectl_auth"]
+      interval: 5s
+      retries: 5
+
+  auth:
+    build: .
+    ports:
+      - "4400:3000"
+    env_file: .env.dev
+    volumes:
+      - ./config/apps.json:/app/config/apps.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local

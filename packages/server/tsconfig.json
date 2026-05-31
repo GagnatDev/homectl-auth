@@ -2,7 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "paths": {
+      "node-pg-migrate": ["./node_modules/node-pg-migrate/dist/bundle/index"]
+    }
   },
   "include": ["src"]
 }

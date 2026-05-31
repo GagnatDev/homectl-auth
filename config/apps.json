@@ -1,0 +1,13 @@
+[
+  {
+    "id": "local-app",
+    "name": "Local Test App",
+    "clientSecretEnv": "LOCAL_APP_CLIENT_SECRET",
+    "allowedRedirectUris": ["http://localhost:4000/auth/callback"],
+    "allowedOrigins": ["http://localhost:4000"],
+    "roles": [
+      { "name": "member", "rank": 1 },
+      { "name": "admin", "rank": 2 }
+    ]
+  }
+]
