@@ -1,5 +1,6 @@
 import { anyAdminExists, createUser } from '../user/user.repository';
 import { hashPassword } from '../user/password.service';
+import { grantAccess } from '../app-access/app-access.repository';
 import { logger } from '../../logger';
 
 export async function validateBootstrapConfig(): Promise<void> {
@@ -42,12 +43,13 @@ export async function bootstrapAdmin(input: {
   const passwordHash = await hashPassword(input.password);
 
   try {
-    await createUser({
+    const user = await createUser({
       email: approvedEmail.trim().toLowerCase(),
       username: input.username.trim(),
       passwordHash,
       isAdmin: true,
     });
+    await grantAccess(user.id, 'admin-ui', 'admin');
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('unique') || msg.includes('duplicate')) {
