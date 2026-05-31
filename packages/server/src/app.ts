@@ -11,7 +11,7 @@ import { sessionRouter } from './routes/session.router';
 import { inviteRouter } from './routes/invite.router';
 import { resetPasswordRouter } from './routes/reset-password.router';
 import { adminRouter } from './routes/admin/admin.router';
-import { bootstrapRouter } from './routes/bootstrap.router';
+import { githubOauthRouter } from './modules/github-oauth/github-oauth.router';
 
 export function createApp(): Express {
   const app = express();
@@ -43,8 +43,10 @@ export function createApp(): Express {
   app.use(sessionRouter);
   app.use(inviteRouter);
   app.use(resetPasswordRouter);
+  // GitHub OAuth login routes must precede adminRouter so /admin/login and
+  // /admin/github/callback are handled before adminRouter's requireAdmin guard.
+  app.use(githubOauthRouter);
   app.use(adminRouter);
-  app.use(bootstrapRouter);
 
   return app;
 }

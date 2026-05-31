@@ -3,7 +3,6 @@ import { createApp } from './app';
 import { logger } from './logger';
 import { startCleanupJob } from './jobs/cleanup';
 import { loadKeys } from './modules/token/token.service';
-import { validateBootstrapConfig } from './modules/bootstrap/bootstrap.service';
 
 async function main(): Promise<void> {
   const port = parseInt(process.env['PORT'] ?? '3000', 10);
@@ -13,7 +12,6 @@ async function main(): Promise<void> {
   logger.info('Migrations complete');
 
   await loadKeys();
-  await validateBootstrapConfig();
   startCleanupJob();
 
   const app = createApp();

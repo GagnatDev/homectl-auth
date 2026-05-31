@@ -33,21 +33,17 @@ import { getAllApps } from '../../config/apps';
 
 export const adminRouter: IRouter = Router();
 
-// ── Login redirect ────────────────────────────────────────────────────────
-
-adminRouter.get('/admin/login', (req, res) => {
-  // Redirect admin to the standard authorize flow bound to the admin's own app
-  // For v1, there is no separate "admin" client_id — the admin logs in via any
-  // configured app and the resulting JWT's isAdmin flag grants access.
-  res.redirect(302, '/authorize?response_type=code&client_id=admin-ui&redirect_uri=/admin/callback&state=admin');
-});
+// Login (/admin/login) and the GitHub OAuth callback (/admin/github/callback)
+// are served by githubOauthRouter, which is mounted before this router in
+// app.ts — so requests to them never reach the guard below.
 
 // ── API — all require admin JWT ────────────────────────────────────────────
 
 adminRouter.use('/admin/api', requireAdmin);
 adminRouter.use('/admin', (req, res, next) => {
-  // GUI routes: require admin cookie/header
-  if (req.path === '/login' || req.path === '/callback') return next();
+  // GUI routes: require admin cookie/header. The login and OAuth callback paths
+  // are handled upstream; exempt them here too as a defensive measure.
+  if (req.path === '/login' || req.path === '/github/callback') return next();
   return requireAdmin(req, res, next);
 });
 

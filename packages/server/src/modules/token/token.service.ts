@@ -105,11 +105,17 @@ export type AccessTokenPayload = {
   isAdmin: boolean;
   /** All apps the user has access to */
   apps: AppClaim[];
+  /** GitHub login — present only on admin tokens issued via GitHub OAuth */
+  login?: string;
   iat: number;
   exp: number;
 };
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // 15 minutes
+const ADMIN_TOKEN_TTL_SECONDS = 8 * 60 * 60; // 8 hours
+
+/** Audience for admin-panel tokens issued via GitHub OAuth. */
+const ADMIN_AUDIENCE = 'admin-ui';
 
 function getIssuer(): string {
   return process.env['AUTH_SERVICE_URL'] ?? 'https://auth.homectl.no';
@@ -141,6 +147,41 @@ export async function signAccessToken(input: SignAccessTokenInput): Promise<stri
     .setSubject(input.sub)
     .setIssuedAt(now)
     .setExpirationTime(now + ACCESS_TOKEN_TTL_SECONDS)
+    .sign(privateKey);
+}
+
+// ── Sign (admin) ─────────────────────────────────────────────────────────────
+
+export type SignAdminTokenInput = {
+  githubUserId: number;
+  login: string;
+  email: string;
+};
+
+/**
+ * Issue an 8-hour admin JWT for a GitHub-authenticated system owner.
+ *
+ * The admin is not a local user, so there is no `users.id` — the subject is
+ * `github:<id>` instead.  `isAdmin` is always true (callers gate this on the
+ * GITHUB_ADMIN_USER_IDS allowlist) and `apps` is empty.  The GitHub `login` is
+ * carried as a claim for audit logging.
+ */
+export async function signAdminToken(input: SignAdminTokenInput): Promise<string> {
+  const { privateKey, kid } = getKeys();
+  const now = Math.floor(Date.now() / 1000);
+
+  return new SignJWT({
+    email: input.email,
+    isAdmin: true,
+    apps: [],
+    login: input.login,
+  })
+    .setProtectedHeader({ alg: 'RS256', kid })
+    .setIssuer(getIssuer())
+    .setAudience(ADMIN_AUDIENCE)
+    .setSubject(`github:${input.githubUserId}`)
+    .setIssuedAt(now)
+    .setExpirationTime(now + ADMIN_TOKEN_TTL_SECONDS)
     .sign(privateKey);
 }
 
@@ -181,6 +222,7 @@ export async function verifyAccessToken(
     email: payload['email'] as string,
     isAdmin: payload['isAdmin'] as boolean,
     apps: payload['apps'] as AppClaim[],
+    login: payload['login'] as string | undefined,
     iat: payload['iat'] as number,
     exp: payload['exp'] as number,
   };
