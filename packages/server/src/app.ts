@@ -11,6 +11,7 @@ import { sessionRouter } from './routes/session.router';
 import { inviteRouter } from './routes/invite.router';
 import { resetPasswordRouter } from './routes/reset-password.router';
 import { adminRouter } from './routes/admin/admin.router';
+import { bootstrapRouter } from './routes/bootstrap.router';
 
 export function createApp(): Express {
   const app = express();
@@ -43,6 +44,7 @@ export function createApp(): Express {
   app.use(inviteRouter);
   app.use(resetPasswordRouter);
   app.use(adminRouter);
+  app.use(bootstrapRouter);
 
   return app;
 }

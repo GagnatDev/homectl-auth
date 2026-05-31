@@ -30,6 +30,7 @@ WORKDIR /app
 # Copy pruned production deps + built output
 COPY --from=builder /app/deploy .
 COPY --from=builder /app/packages/server/src/db/migrations ./dist/db/migrations
+COPY --from=builder /app/packages/server/src/views ./dist/views
 
 # Create non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup

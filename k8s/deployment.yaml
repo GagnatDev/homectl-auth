@@ -40,6 +40,13 @@ spec:
                 secretKeyRef:
                   name: homectl-auth-secrets
                   key: RS256_PUBLIC_KEY_PEM
+            # Bootstrap admin email — remove this secret after the first admin is registered
+            - name: BOOTSTRAP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: homectl-auth-secrets
+                  key: BOOTSTRAP_ADMIN_EMAIL
+                  optional: true
             # Per-app client secret hashes — add one entry per registered app
             - name: TRAVEL_JOURNAL_CLIENT_SECRET
               valueFrom:

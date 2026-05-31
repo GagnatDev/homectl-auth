@@ -72,3 +72,10 @@ export async function updatePasswordHash(userId: string, passwordHash: string): 
     [passwordHash, userId],
   );
 }
+
+export async function anyAdminExists(): Promise<boolean> {
+  const { rows } = await getPool().query<{ exists: boolean }>(
+    'SELECT EXISTS(SELECT 1 FROM homectl_auth.users WHERE is_admin = TRUE) AS exists',
+  );
+  return rows[0]!.exists;
+}
