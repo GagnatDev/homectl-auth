@@ -35,6 +35,11 @@ spec:
                 secretKeyRef:
                   name: homectl-auth-secrets
                   key: RS256_PRIVATE_KEY_PEM
+            - name: RS256_PUBLIC_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  name: homectl-auth-secrets
+                  key: RS256_PUBLIC_KEY_PEM
             # Per-app client secret hashes — add one entry per registered app
             - name: TRAVEL_JOURNAL_CLIENT_SECRET
               valueFrom:

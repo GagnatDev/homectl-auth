@@ -37,9 +37,12 @@ Generate an RS256 key pair:
 ```bash
 openssl genrsa -out private_key.pem 2048
 openssl rsa -in private_key.pem -pubout -out public_key.pem
-# Base64-encode for the env var:
-base64 -w0 < private_key.pem
+# Base64-encode for the env vars:
+base64 -w0 < private_key.pem   # → RS256_PRIVATE_KEY_PEM
+base64 -w0 < public_key.pem    # → RS256_PUBLIC_KEY_PEM
 ```
+
+Both `RS256_PRIVATE_KEY_PEM` and `RS256_PUBLIC_KEY_PEM` are required. The server signs JWTs with the private key and derives the JWKS `kid` from the public key, which is served at `/.well-known/jwks.json` for consuming apps.
 
 ### Apps config
 
@@ -276,8 +279,11 @@ kubectl create secret generic homectl-auth-secrets \
   --namespace homectl \
   --from-literal=POSTGRES_URL='postgres://user:pass@host:5432/db' \
   --from-literal=RS256_PRIVATE_KEY_PEM="$(base64 -w0 < private_key.pem)" \
+  --from-literal=RS256_PUBLIC_KEY_PEM="$(base64 -w0 < public_key.pem)" \
   --from-literal=TRAVEL_JOURNAL_CLIENT_SECRET='$2b$12$...'
 ```
+
+Once the secret is created, store `private_key.pem` in a secure offline location (password manager or encrypted vault) and delete it from disk. You only need it again if you rotate the key pair. `public_key.pem` is less sensitive — consuming apps should fetch the public key dynamically via `/.well-known/jwks.json` rather than storing it.
 
 Subsequent deploys are fully automated — just push to `main`.
 
@@ -286,7 +292,8 @@ Subsequent deploys are fully automated — just push to `main`.
 | Secret key | Description |
 |---|---|
 | `POSTGRES_URL` | PostgreSQL connection string |
-| `RS256_PRIVATE_KEY_PEM` | Base64-encoded RS256 private key PEM |
+| `RS256_PRIVATE_KEY_PEM` | Base64-encoded RS256 private key PEM (PKCS#8) — used to sign JWTs |
+| `RS256_PUBLIC_KEY_PEM` | Base64-encoded RS256 public key PEM (SPKI) — used to derive JWKS `kid` and serve `/.well-known/jwks.json` |
 | `<APP>_CLIENT_SECRET` | bcrypt hash of each app's client secret |
 
 ### Required GitHub Actions secrets
