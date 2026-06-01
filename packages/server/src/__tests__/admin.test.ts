@@ -180,3 +180,72 @@ describe('POST /admin/api/users/:id/password-reset', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ── htmx fragment responses (HX-Request header) ─────────────────────────────
+//
+// The admin GUI drives these endpoints with htmx, which expects an HTML fragment
+// to swap into the page rather than JSON. The HX-Request header is the signal.
+
+describe('htmx fragment responses', () => {
+  it('grant access returns the updated access-table fragment', async () => {
+    const token = await adminToken();
+    const user = await createTestUser();
+
+    const res = await request(app)
+      .post(`/admin/api/users/${user.id}/access`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('HX-Request', 'true')
+      .send({ appId: TEST_APP_ID, role: 'viewer' });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+    expect(res.text).toContain('id="access-table"');
+    expect(res.text).toContain(`id="access-${TEST_APP_ID}"`);
+    expect(res.text).toContain('viewer');
+  });
+
+  it('revoke access returns an empty 200 so htmx removes the row', async () => {
+    const token = await adminToken();
+    const user = await createTestUserWithAccess(TEST_APP_ID, 'editor');
+
+    const res = await request(app)
+      .delete(`/admin/api/users/${user.id}/access/${TEST_APP_ID}`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('HX-Request', 'true');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toBe('');
+
+    const access = await findAccess(user.id, TEST_APP_ID);
+    expect(access).toBeNull();
+  });
+
+  it('password reset returns the reset-link fragment', async () => {
+    const token = await adminToken();
+    const user = await createTestUser();
+
+    const res = await request(app)
+      .post(`/admin/api/users/${user.id}/password-reset`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('HX-Request', 'true');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+    expect(res.text).toContain('/reset-password?token=');
+  });
+
+  it('invite creation renders the page when HTML is preferred', async () => {
+    const token = await adminToken();
+
+    const res = await request(app)
+      .post('/admin/api/invites')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Accept', 'text/html')
+      .type('form')
+      .send({ email: 'gui@example.com', 'appGrants[0][appId]': TEST_APP_ID, 'appGrants[0][role]': 'viewer' });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+    expect(res.text).toContain('/invite?token=');
+  });
+});

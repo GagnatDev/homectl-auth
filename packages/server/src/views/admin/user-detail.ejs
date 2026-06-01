@@ -31,26 +31,7 @@
   </p>
 
   <h2>App Access</h2>
-  <table id="access-table">
-    <thead><tr><th>App</th><th>Role</th><th></th></tr></thead>
-    <tbody>
-      <% for (const a of access) { %>
-      <tr id="access-<%= a.appId %>">
-        <td><%= a.appId %></td>
-        <td><%= a.role %></td>
-        <td>
-          <button
-            hx-delete="/admin/api/users/<%= user.id %>/access/<%= a.appId %>"
-            hx-target="#access-<%= a.appId %>"
-            hx-swap="outerHTML"
-            hx-confirm="Remove <%= a.appId %> access?">
-            Revoke
-          </button>
-        </td>
-      </tr>
-      <% } %>
-    </tbody>
-  </table>
+  <%- include('_access-table', { access, user }) %>
 
   <form class="grant"
     hx-post="/admin/api/users/<%= user.id %>/access"

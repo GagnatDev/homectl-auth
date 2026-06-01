@@ -18,7 +18,7 @@
  *   GET    /admin/login                — login page (redirects to /authorize)
  */
 
-import { Router, type IRouter } from 'express';
+import { Router, type IRouter, type Request } from 'express';
 import { requireAdmin } from '../../middleware/require-admin';
 import { getPool } from '../../db';
 import { findUserById } from '../../modules/user/user.repository';
@@ -32,6 +32,17 @@ import { createResetToken } from '../../modules/password-reset/password-reset.se
 import { getAllApps } from '../../config/apps';
 
 export const adminRouter: IRouter = Router();
+
+/**
+ * Whether to answer with rendered HTML rather than JSON. True for htmx requests
+ * (which send the HX-Request header) and for browser navigations that explicitly
+ * prefer HTML. API clients (and tests) send neither, so they keep getting JSON:
+ * with no Accept header, req.accepts(['json','html']) returns the first listed,
+ * 'json'.
+ */
+function wantsHtml(req: Request): boolean {
+  return Boolean(req.get('HX-Request')) || req.accepts(['json', 'html']) === 'html';
+}
 
 // Login (/admin/login) and the GitHub OAuth callback (/admin/github/callback)
 // are served by githubOauthRouter, which is mounted before this router in
@@ -95,18 +106,34 @@ adminRouter.get('/admin/api/users/:id', async (req, res) => {
 
 // POST /admin/api/users/:id/access
 adminRouter.post('/admin/api/users/:id/access', async (req, res) => {
+  const userId = req.params['id']!;
   const { appId, role } = req.body as Record<string, string>;
   if (!appId || !role) {
     res.status(400).json({ error: 'appId and role required' });
     return;
   }
-  const access = await grantAccess(req.params['id']!, appId, role);
+  const access = await grantAccess(userId, appId, role);
+
+  // The user-detail page grants access via htmx, swapping the whole #access-table
+  // (hx-swap="outerHTML"). Render the updated table fragment; API clients get JSON.
+  if (wantsHtml(req)) {
+    const updated = await getAccessForUser(userId);
+    res.render('admin/_access-table', { access: updated, user: { id: userId } });
+    return;
+  }
   res.status(201).json({ appId: access.appId, role: access.role });
 });
 
 // DELETE /admin/api/users/:id/access/:appId
 adminRouter.delete('/admin/api/users/:id/access/:appId', async (req, res) => {
   await revokeAccess(req.params['id']!, req.params['appId']!);
+
+  // htmx targets the row with hx-swap="outerHTML"; an empty 200 body removes it.
+  // (A 204 would make htmx skip the swap, leaving the stale row in the DOM.)
+  if (wantsHtml(req)) {
+    res.send('');
+    return;
+  }
   res.status(204).end();
 });
 
@@ -128,7 +155,7 @@ adminRouter.post('/admin/api/invites', async (req, res) => {
 
   // The admin invite form is a native (non-htmx) POST that navigates, so render
   // the page back with the generated token. API clients still get JSON.
-  if (req.accepts('html')) {
+  if (wantsHtml(req)) {
     res.render('admin/invite', { apps: getAllApps(), result: { token } });
     return;
   }
@@ -144,6 +171,13 @@ adminRouter.post('/admin/api/users/:id/password-reset', async (req, res) => {
     return;
   }
   const { token } = await createResetToken({ userId: user.id });
+
+  // The user-detail page triggers this via htmx, swapping the link into
+  // #reset-result (hx-swap="innerHTML"). Render the fragment; API clients get JSON.
+  if (wantsHtml(req)) {
+    res.render('admin/_reset-result', { token });
+    return;
+  }
   res.status(201).json({ token, link: `/reset-password?token=${token}` });
 });
 
