@@ -31,6 +31,7 @@ WORKDIR /app
 COPY --from=builder /app/deploy .
 COPY --from=builder /app/packages/server/src/db/migrations ./dist/db/migrations
 COPY --from=builder /app/packages/server/src/views ./dist/views
+COPY --from=builder /app/packages/server/src/public ./dist/public
 
 # Create non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup

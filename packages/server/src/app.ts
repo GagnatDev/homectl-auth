@@ -33,6 +33,11 @@ export function createApp(): Express {
   app.set('view engine', 'ejs');
   app.set('views', join(__dirname, 'views'));
 
+  // ── Static assets ───────────────────────────────────────────────────────────
+  // Vendored client libraries (e.g. htmx) are served from our own origin so the
+  // strict CSP (script-src 'self') needs no CDN exception. Public — no auth guard.
+  app.use('/static', express.static(join(__dirname, 'public'), { maxAge: '1d' }));
+
   // ── Health ────────────────────────────────────────────────────────────────
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
