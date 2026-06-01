@@ -49,14 +49,17 @@ function clearStateCookie(res: Response): void {
 }
 
 /**
- * Admin token cookie can stay SameSite=Strict — it is only used on same-site
- * navigation within the admin panel after login.
+ * Admin token cookie MUST be SameSite=Lax: it is set in the callback response
+ * which then redirects to /admin. That redirect is the hop immediately following
+ * the cross-site navigation from github.com, so a Strict cookie would not be sent
+ * on it and /admin would bounce straight back to /admin/login. Lax still blocks
+ * the cookie on cross-site subrequests, and it remains httpOnly.
  */
 function setAdminTokenCookie(res: Response, token: string): void {
   res.cookie(ADMIN_TOKEN_COOKIE_NAME, token, {
     httpOnly: true,
     secure: isProd(),
-    sameSite: 'strict',
+    sameSite: 'lax',
     path: '/',
     maxAge: 8 * 60 * 60 * 1000, // 8 hours
   });

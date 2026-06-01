@@ -126,6 +126,13 @@ adminRouter.post('/admin/api/invites', async (req, res) => {
     createdByUserId: admin.sub,
   });
 
+  // The admin invite form is a native (non-htmx) POST that navigates, so render
+  // the page back with the generated token. API clients still get JSON.
+  if (req.accepts('html')) {
+    res.render('admin/invite', { apps: getAllApps(), result: { token } });
+    return;
+  }
+
   res.status(201).json({ token, link: `/invite?token=${token}` });
 });
 

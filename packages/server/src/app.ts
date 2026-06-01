@@ -23,6 +23,10 @@ export function createApp(): Express {
 
   app.use(helmet());
   app.use(express.json());
+  // Admin GUI forms (native and htmx) post urlencoded bodies. extended:true is
+  // required so the invite form's bracket notation (appGrants[0][appId]) parses
+  // into a nested array.
+  app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
 
   // ── Templating ────────────────────────────────────────────────────────────
