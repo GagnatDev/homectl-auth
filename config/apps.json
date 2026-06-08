@@ -3,11 +3,42 @@
     "id": "local-app",
     "name": "Local Test App",
     "clientSecretEnv": "LOCAL_APP_CLIENT_SECRET",
-    "allowedRedirectUris": ["http://localhost:4000/auth/callback"],
-    "allowedOrigins": ["http://localhost:4000"],
+    "allowedRedirectUris": [
+      "http://localhost:4000/auth/callback"
+    ],
+    "allowedOrigins": [
+      "http://localhost:4000"
+    ],
     "roles": [
-      { "name": "member", "rank": 1 },
-      { "name": "admin", "rank": 2 }
+      {
+        "name": "member",
+        "rank": 1
+      },
+      {
+        "name": "admin",
+        "rank": 2
+      }
+    ]
+  },
+  {
+    "id": "workbench",
+    "name": "Workbench",
+    "clientSecretEnv": "WORKBENCH_CLIENT_SECRET",
+    "allowedRedirectUris": [
+      "http://localhost:3000/auth/callback"
+    ],
+    "allowedOrigins": [
+      "http://localhost:3000"
+    ],
+    "roles": [
+      {
+        "name": "member",
+        "rank": 1
+      },
+      {
+        "name": "admin",
+        "rank": 2
+      }
     ]
   }
 ]

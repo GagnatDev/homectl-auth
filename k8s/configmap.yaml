@@ -19,5 +19,16 @@ data:
           { "name": "follower", "rank": 1 },
           { "name": "creator", "rank": 2 }
         ]
+      },
+      {
+        "id": "workbench",
+        "name": "Workbench",
+        "clientSecretEnv": "WORKBENCH_CLIENT_SECRET",
+        "allowedRedirectUris": ["https://workbench.homectl.no/auth/callback"],
+        "allowedOrigins": ["https://workbench.homectl.no"],
+        "roles": [
+          { "name": "member", "rank": 1 },
+          { "name": "admin", "rank": 2 }
+        ]
       }
     ]

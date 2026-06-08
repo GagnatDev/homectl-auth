@@ -62,6 +62,11 @@ spec:
                 secretKeyRef:
                   name: homectl-auth-secrets
                   key: TRAVEL_JOURNAL_CLIENT_SECRET
+            - name: WORKBENCH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homectl-auth-secrets
+                  key: WORKBENCH_CLIENT_SECRET
           volumeMounts:
             - name: apps-config
               mountPath: /app/apps.json
