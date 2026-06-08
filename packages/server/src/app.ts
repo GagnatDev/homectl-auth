@@ -15,14 +15,27 @@ import { adminRouter } from './routes/admin/admin.router';
 import { githubOauthRouter } from './modules/github-oauth/github-oauth.router';
 
 /**
- * Space-separated list of registered apps' origins for the CSP `form-action`
- * directive. Returns `'self'` (a harmless duplicate of the first source) when no
- * extra origins are configured, so the directive never emits an empty token.
+ * Space-separated list of origins for the CSP `form-action` directive, derived
+ * from the registered apps' `allowedRedirectUris` — i.e. the actual 302 targets
+ * of the login form. Deriving from the redirect URIs (not `allowedOrigins`)
+ * keeps the directive aligned with where this service actually redirects, so a
+ * future app whose redirect_uri lives on a different host than its origin still
+ * works. Returns `'self'` when no extra origins are configured, so the directive
+ * never emits an empty token. Malformed URIs are skipped.
  */
 function formActionOrigins(): string {
   try {
-    const origins = getAllApps().flatMap((a) => a.allowedOrigins);
-    return origins.length > 0 ? origins.join(' ') : "'self'";
+    const origins = new Set<string>();
+    for (const app of getAllApps()) {
+      for (const uri of app.allowedRedirectUris) {
+        try {
+          origins.add(new URL(uri).origin);
+        } catch {
+          // skip malformed redirect URIs rather than break the whole directive
+        }
+      }
+    }
+    return origins.size > 0 ? Array.from(origins).join(' ') : "'self'";
   } catch {
     return "'self'";
   }
