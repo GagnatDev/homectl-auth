@@ -32,7 +32,7 @@
       <input type="email" id="email" name="email" required>
 
       <label for="appId">App</label>
-      <select id="appId" name="appGrants[0][appId]">
+      <select id="appId" name="appGrants[0][appId]" onchange="updateRoles(this.value)">
         <% for (const app of apps) { %>
           <option value="<%= app.id %>"><%= app.name %></option>
         <% } %>
@@ -46,6 +46,14 @@
           <% } %>
         <% } %>
       </select>
+
+      <script>
+        const appRoles = <%- JSON.stringify(Object.fromEntries(apps.map(a => [a.id, a.roles.map(r => r.name)]))) %>;
+        function updateRoles(appId) {
+          const sel = document.getElementById('role');
+          sel.innerHTML = (appRoles[appId] || []).map(r => `<option value="${r}">${r}</option>`).join('');
+        }
+      </script>
 
       <button type="submit">Generate Invite Link</button>
     </form>
