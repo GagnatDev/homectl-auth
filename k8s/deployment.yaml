@@ -20,52 +20,50 @@ spec:
           image: rg.fr-par.scw.cloud/homectl/homectl-auth:$IMAGE_TAG
           ports:
             - containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: auth-terraform-secrets   # Terraform-managed: DATABASE_URL
           env:
             - name: NODE_ENV
               value: production
             - name: PORT
               value: "3000"
-            - name: POSTGRES_URL
-              valueFrom:
-                secretKeyRef:
-                  name: homectl-auth-secrets
-                  key: POSTGRES_URL
             - name: RS256_PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:
-                  name: homectl-auth-secrets
+                  name: auth-secrets
                   key: RS256_PRIVATE_KEY_PEM
             - name: RS256_PUBLIC_KEY_PEM
               valueFrom:
                 secretKeyRef:
-                  name: homectl-auth-secrets
+                  name: auth-secrets
                   key: RS256_PUBLIC_KEY_PEM
             # GitHub OAuth admin login
             - name: GITHUB_ADMIN_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: homectl-auth-secrets
+                  name: auth-secrets
                   key: GITHUB_ADMIN_CLIENT_ID
             - name: GITHUB_ADMIN_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: homectl-auth-secrets
+                  name: auth-secrets
                   key: GITHUB_ADMIN_CLIENT_SECRET
             - name: GITHUB_ADMIN_USER_IDS
               valueFrom:
                 secretKeyRef:
-                  name: homectl-auth-secrets
+                  name: auth-secrets
                   key: GITHUB_ADMIN_USER_IDS
             # Per-app client secret hashes — add one entry per registered app
             - name: TRAVEL_JOURNAL_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: homectl-auth-secrets
+                  name: auth-secrets
                   key: TRAVEL_JOURNAL_CLIENT_SECRET
             - name: WORKBENCH_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: homectl-auth-secrets
+                  name: auth-secrets
                   key: WORKBENCH_CLIENT_SECRET
           volumeMounts:
             - name: apps-config

@@ -5,9 +5,9 @@ let _pool: Pool | null = null;
 
 export function getPool(): Pool {
   if (!_pool) {
-    const connectionString = process.env['POSTGRES_URL'];
+    const connectionString = process.env['DATABASE_URL'];
     if (!connectionString) {
-      throw new Error('POSTGRES_URL environment variable is not set');
+      throw new Error('DATABASE_URL environment variable is not set');
     }
     _pool = new Pool({ connectionString });
   }
@@ -22,8 +22,8 @@ export async function closePool(): Promise<void> {
 }
 
 export async function runMigrations(): Promise<void> {
-  const databaseUrl = process.env['POSTGRES_URL'];
-  if (!databaseUrl) throw new Error('POSTGRES_URL environment variable is not set');
+  const databaseUrl = process.env['DATABASE_URL'];
+  if (!databaseUrl) throw new Error('DATABASE_URL environment variable is not set');
 
   const { runner } = await import('node-pg-migrate');
 

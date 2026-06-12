@@ -196,7 +196,7 @@ openssl rand -hex 32
 node -e "require('bcryptjs').hash('YOUR_RANDOM_SECRET', 12).then(console.log)"
 
 # Store the hash as a Kubernetes secret
-kubectl create secret generic homectl-auth-secrets \
+kubectl create secret generic auth-secrets \
   --namespace homectl \
   --from-literal=MY_APP_CLIENT_SECRET='$2b$12$...' \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -272,29 +272,46 @@ CI/CD (`push` to `main`) handles everything: build and push the image, substitut
 
 ### First-time bootstrap
 
-The only manual step is creating the `homectl-auth-secrets` Secret with real values. See `secrets.example.yaml` for the expected keys.
+The deployment uses two Kubernetes Secrets:
+
+**`auth-terraform-secrets`** — created automatically by `terraform apply` in `homectl-infra`. Contains `DATABASE_URL` pointing at the dedicated `auth` database user. No manual step needed.
+
+**`auth-secrets`** — hand-managed. Create once with your own values:
 
 ```bash
-kubectl create secret generic homectl-auth-secrets \
+kubectl create secret generic auth-secrets \
   --namespace homectl \
-  --from-literal=POSTGRES_URL='postgres://user:pass@host:5432/db' \
   --from-literal=RS256_PRIVATE_KEY_PEM="$(base64 -w0 < private_key.pem)" \
   --from-literal=RS256_PUBLIC_KEY_PEM="$(base64 -w0 < public_key.pem)" \
-  --from-literal=TRAVEL_JOURNAL_CLIENT_SECRET='$2b$12$...'
+  --from-literal=GITHUB_ADMIN_CLIENT_ID='...' \
+  --from-literal=GITHUB_ADMIN_CLIENT_SECRET='...' \
+  --from-literal=GITHUB_ADMIN_USER_IDS='...' \
+  --from-literal=TRAVEL_JOURNAL_CLIENT_SECRET='$2b$12$...' \
+  --from-literal=WORKBENCH_CLIENT_SECRET='$2b$12$...'
 ```
 
 Once the secret is created, store `private_key.pem` in a secure offline location (password manager or encrypted vault) and delete it from disk. You only need it again if you rotate the key pair. `public_key.pem` is less sensitive — consuming apps should fetch the public key dynamically via `/.well-known/jwks.json` rather than storing it.
 
 Subsequent deploys are fully automated — just push to `main`.
 
+#### Migration: reassign table ownership (one-time, before first deploy with per-app user)
+
+Before the first deploy that switches to `auth-terraform-secrets`, transfer ownership of all existing database objects from the shared admin user to the `auth` user. Connect to the `auth` database as the `homectl` admin user and run:
+
+```sql
+REASSIGN OWNED BY homectl TO auth;
+```
+
+This transfers ownership of all tables, sequences, and other objects in a single statement. Without this step, schema migrations will fail with *"must be owner of table"*.
+
 ### Required secrets (in cluster)
 
-| Secret key | Description |
-|---|---|
-| `POSTGRES_URL` | PostgreSQL connection string |
-| `RS256_PRIVATE_KEY_PEM` | Base64-encoded RS256 private key PEM (PKCS#8) — used to sign JWTs |
-| `RS256_PUBLIC_KEY_PEM` | Base64-encoded RS256 public key PEM (SPKI) — used to derive JWKS `kid` and serve `/.well-known/jwks.json` |
-| `<APP>_CLIENT_SECRET` | bcrypt hash of each app's client secret |
+| Secret | Key | Description |
+|---|---|---|
+| `auth-terraform-secrets` | `DATABASE_URL` | PostgreSQL connection string — managed by Terraform |
+| `auth-secrets` | `RS256_PRIVATE_KEY_PEM` | Base64-encoded RS256 private key PEM (PKCS#8) — used to sign JWTs |
+| `auth-secrets` | `RS256_PUBLIC_KEY_PEM` | Base64-encoded RS256 public key PEM (SPKI) — used to derive JWKS `kid` and serve `/.well-known/jwks.json` |
+| `auth-secrets` | `<APP>_CLIENT_SECRET` | bcrypt hash of each app's client secret |
 
 ### Required GitHub Actions secrets
 
