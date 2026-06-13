@@ -1,9 +1,10 @@
 /**
  * Admin middleware
  *
- * Validates the Bearer JWT and checks isAdmin: true.
- * - API requests (no Accept: text/html) → 401/403 JSON
- * - Browser requests (Accept: text/html) → redirect to /authorize
+ * Guards the /admin/api JSON endpoints. Validates the Bearer JWT (or the
+ * `homectl_admin_token` cookie the SPA sends same-origin) and checks
+ * isAdmin: true. Always responds with JSON — the React SPA turns a 401/403 into
+ * a client-side redirect to /admin/login.
  */
 
 import { type Request, type Response, type NextFunction } from 'express';
@@ -17,11 +18,6 @@ declare global {
   }
 }
 
-function isHtmlRequest(req: Request): boolean {
-  const accept = req.headers['accept'] ?? '';
-  return accept.includes('text/html');
-}
-
 export async function requireAdmin(
   req: Request,
   res: Response,
@@ -29,40 +25,27 @@ export async function requireAdmin(
 ): Promise<void> {
   const authHeader = req.headers['authorization'];
 
-  // Check for cookie-based access token (admin GUI uses a cookie in Phase 5)
-  // For simplicity in v1: the admin GUI is protected by Bearer JWT embedded in
-  // a cookie named `homectl_admin_token`. This avoids needing a separate session.
+  // The admin GUI is protected by an RS256 JWT carried in the httpOnly
+  // `homectl_admin_token` cookie (set by the GitHub OAuth callback). API clients
+  // may instead send it as a Bearer token.
   const cookieToken = (req.cookies as Record<string, string>)['homectl_admin_token'];
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
   const token = bearerToken ?? cookieToken;
 
   if (!token) {
-    if (isHtmlRequest(req)) {
-      // Redirect to login — in v1 the admin uses the same login flow
-      res.redirect(302, '/admin/login');
-    } else {
-      res.status(401).json({ error: 'unauthorized' });
-    }
+    res.status(401).json({ error: 'unauthorized' });
     return;
   }
 
   try {
     const payload = await verifyAccessToken(token);
     if (!payload.isAdmin) {
-      if (isHtmlRequest(req)) {
-        res.status(403).render('admin/error', { message: 'Admin access required.' });
-      } else {
-        res.status(403).json({ error: 'forbidden' });
-      }
+      res.status(403).json({ error: 'forbidden' });
       return;
     }
     res.locals['admin'] = payload;
     next();
   } catch {
-    if (isHtmlRequest(req)) {
-      res.redirect(302, '/admin/login');
-    } else {
-      res.status(401).json({ error: 'invalid_token' });
-    }
+    res.status(401).json({ error: 'invalid_token' });
   }
 }

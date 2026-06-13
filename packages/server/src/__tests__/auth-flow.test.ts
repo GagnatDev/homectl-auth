@@ -32,7 +32,7 @@ afterAll(() => {
 // ── GET /authorize ─────────────────────────────────────────────────────────
 
 describe('GET /authorize', () => {
-  it('returns 200 with login form for valid client_id + redirect_uri', async () => {
+  it('returns 200 with the SPA shell for valid client_id + redirect_uri', async () => {
     const res = await request(app)
       .get('/authorize')
       .query({
@@ -42,8 +42,9 @@ describe('GET /authorize', () => {
         state: 'abc123',
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain('Test App');
-    expect(res.text).toContain('Log in');
+    expect(res.headers['content-type']).toMatch(/html/);
+    // The React login page renders client-side; the server returns the shell.
+    expect(res.text).toContain('id="root"');
   });
 
   it('returns 400 for unknown client_id', async () => {
@@ -100,7 +101,7 @@ describe('POST /login', () => {
     expect(url.searchParams.get('state')).toBe('mystate');
   });
 
-  it('returns 401 for wrong password', async () => {
+  it('redirects back to the login page with an error for wrong password', async () => {
     const user = await createTestUser();
 
     const res = await request(app)
@@ -114,10 +115,14 @@ describe('POST /login', () => {
         password: 'wrong-password',
       });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(302);
+    const url = new URL(res.headers['location'] as string, 'http://localhost');
+    expect(url.pathname).toBe('/authorize');
+    expect(url.searchParams.get('error')).toBe('invalid_credentials');
+    expect(url.searchParams.get('client_id')).toBe(TEST_APP_ID);
   });
 
-  it('returns 401 for unknown username', async () => {
+  it('redirects back to the login page with an error for unknown username', async () => {
     const res = await request(app)
       .post('/login')
       .type('form')
@@ -129,10 +134,12 @@ describe('POST /login', () => {
         password: 'anything',
       });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(302);
+    const url = new URL(res.headers['location'] as string, 'http://localhost');
+    expect(url.searchParams.get('error')).toBe('invalid_credentials');
   });
 
-  it('returns 403 when user lacks app access', async () => {
+  it('redirects back with a no_access error when the user lacks app access', async () => {
     const user = await createTestUser(); // no app access granted
 
     const res = await request(app)
@@ -146,7 +153,10 @@ describe('POST /login', () => {
         password: user.plainPassword,
       });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(302);
+    const url = new URL(res.headers['location'] as string, 'http://localhost');
+    expect(url.pathname).toBe('/authorize');
+    expect(url.searchParams.get('error')).toBe('no_access');
   });
 
   it('allows login using email as the username field', async () => {

@@ -9,6 +9,7 @@ Issues RS256-signed JWTs to all apps on the domain. Users have one account and o
 | Package | Description |
 |---|---|
 | `packages/server` | The auth service — Express + TypeScript + Postgres |
+| `packages/web` | The GUI — a React + TypeScript + Tailwind (shadcn/ui) SPA, built with Vite and served by the server |
 | `packages/client` | `@gagnatdev/homectl-auth-client` — integration library for consuming apps |
 
 ## Quick Start (local dev)
@@ -58,6 +59,29 @@ pnpm --filter @homectl/server dev
 # Server starts at http://localhost:3000
 # JWKS: http://localhost:3000/.well-known/jwks.json
 # Health: http://localhost:3000/health
+```
+
+### GUI (React SPA)
+
+The login, invite, password-reset, and admin pages are a React SPA in
+`packages/web`. In production it is built (`vite build`) and served by the
+server as static assets — `WEB_DIST_DIR` points at the bundle (defaults to
+`dist/web`, where the Docker build copies it).
+
+For GUI development, run the Vite dev server alongside the auth server. It
+proxies API and form-POST endpoints to the server (default `http://localhost:3000`;
+override with `AUTH_SERVER_ORIGIN`):
+
+```bash
+pnpm --filter @homectl/server dev      # terminal 1 — API on :3000
+pnpm --filter @homectl/web dev         # terminal 2 — GUI on :5173 (HMR)
+```
+
+To serve the built GUI from the server itself (production parity):
+
+```bash
+pnpm --filter @homectl/web build
+WEB_DIST_DIR="$(pwd)/packages/web/dist" pnpm --filter @homectl/server dev
 ```
 
 ### Test

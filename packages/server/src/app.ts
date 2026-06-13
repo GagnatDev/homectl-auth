@@ -2,7 +2,6 @@ import express, { type Express } from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import pinoHttp from 'pino-http';
-import { join } from 'path';
 import { logger } from './logger';
 import { getAllApps } from './config/apps';
 import { jwksRouter } from './routes/jwks.router';
@@ -13,6 +12,7 @@ import { inviteRouter } from './routes/invite.router';
 import { resetPasswordRouter } from './routes/reset-password.router';
 import { adminRouter } from './routes/admin/admin.router';
 import { githubOauthRouter } from './modules/github-oauth/github-oauth.router';
+import { serveShell, WEB_DIST_DIR } from './web-shell';
 
 /**
  * Space-separated list of origins for the CSP `form-action` directive, derived
@@ -62,6 +62,11 @@ export function createApp(): Express {
       contentSecurityPolicy: {
         directives: {
           'form-action': ["'self'", () => formActionOrigins()],
+          // The React SPA relies on Radix UI, which sets inline `style="…"`
+          // attributes (animation/positioning state). helmet's default
+          // `style-src 'self'` would block those, so allow inline styles.
+          // Scripts stay `'self'` — the Vite bundle has no inline JS.
+          'style-src': ["'self'", "'unsafe-inline'"],
         },
       },
     }),
@@ -73,14 +78,24 @@ export function createApp(): Express {
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
 
-  // ── Templating ────────────────────────────────────────────────────────────
-  app.set('view engine', 'ejs');
-  app.set('views', join(__dirname, 'views'));
-
   // ── Static assets ───────────────────────────────────────────────────────────
-  // Vendored client libraries (e.g. htmx) are served from our own origin so the
-  // strict CSP (script-src 'self') needs no CDN exception. Public — no auth guard.
-  app.use('/static', express.static(join(__dirname, 'public'), { maxAge: '1d' }));
+  // The React SPA bundle (index.html + hashed /assets/*). Served from our own
+  // origin so the strict CSP (script-src 'self') needs no exception. Public —
+  // serving only files that exist; unmatched paths fall through to the routers
+  // and the shell catch-all below. Hashed assets are immutable; index.html is
+  // not cached so deploys take effect immediately.
+  app.use(
+    express.static(WEB_DIST_DIR, {
+      index: false,
+      setHeaders: (res, path) => {
+        if (path.endsWith('index.html')) {
+          res.setHeader('Cache-Control', 'no-cache');
+        } else {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    }),
+  );
 
   // ── Health ────────────────────────────────────────────────────────────────
   app.get('/health', (_req, res) => {
@@ -100,6 +115,20 @@ export function createApp(): Express {
   // /admin/github/callback are handled before adminRouter's requireAdmin guard.
   app.use(githubOauthRouter);
   app.use(adminRouter);
+
+  // ── SPA shell fallback ──────────────────────────────────────────────────────
+  // Any unmatched GET that a browser made (Accept: text/html) gets the SPA shell
+  // so React Router can resolve deep links (e.g. /admin/users/:id). API, token,
+  // and well-known paths never fall here — they 404 as JSON instead.
+  app.get('*', (req, res) => {
+    const isApiPath =
+      /^\/(admin\/api|api|token|refresh|logout|health|\.well-known)(\/|$)/.test(req.path);
+    if (isApiPath || !req.accepts('html')) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    serveShell(res);
+  });
 
   return app;
 }

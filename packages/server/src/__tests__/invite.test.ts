@@ -110,8 +110,10 @@ describe('Invite — admin flow', () => {
       .type('form')
       .send({ token, username: 'expuser', password: 'Password123!' });
 
-    expect(res.status).toBe(400);
-    expect(res.text).toContain('expired');
+    expect(res.status).toBe(302);
+    const url = new URL(res.headers['location'] as string, 'http://localhost');
+    expect(url.pathname).toBe('/invite');
+    expect(url.searchParams.get('error')).toBe('EXPIRED_TOKEN');
   });
 
   it('rejects a second redemption of the same invite (single-use)', async () => {
@@ -132,7 +134,10 @@ describe('Invite — admin flow', () => {
       .type('form')
       .send({ token, username: 'reuseuser2', password: 'Password123!' });
 
-    expect(res2.status).toBe(400);
+    expect(res2.status).toBe(302);
+    const url = new URL(res2.headers['location'] as string, 'http://localhost');
+    // The consumed invite token is removed, so reuse reads as invalid.
+    expect(url.searchParams.get('error')).toBe('INVALID_TOKEN');
   });
 
   it('rejects redemption when email belongs to a different user than expected (race)', async () => {
@@ -167,8 +172,9 @@ describe('Invite — admin flow', () => {
       .type('form')
       .send({ token, username: 'raceuser', password: 'Password123!' });
 
-    expect(res.status).toBe(400);
-    expect(res.text).toContain('claimed');
+    expect(res.status).toBe(302);
+    const url = new URL(res.headers['location'] as string, 'http://localhost');
+    expect(url.searchParams.get('error')).toBe('EMAIL_RACE');
   });
 });
 

@@ -10,9 +10,15 @@ import { Router, type IRouter } from 'express';
 import express from 'express';
 import { redeemInvite, createDelegatedInvite } from '../modules/invite/invite.service';
 import { verifyAccessToken } from '../modules/token/token.service';
-import { findAccess } from '../modules/app-access/app-access.repository';
+import { serveShell } from '../web-shell';
 
 export const inviteRouter: IRouter = Router();
+
+/** Bounce back to the invite form with an error code the SPA maps to a message. */
+function redirectToInviteError(res: import('express').Response, token: string, error: string): void {
+  const q = new URLSearchParams({ token, error });
+  res.redirect(302, `/invite?${q.toString()}`);
+}
 
 // ── GET /invite ────────────────────────────────────────────────────────────
 
@@ -22,7 +28,8 @@ inviteRouter.get('/invite', (req, res) => {
     res.status(400).send('Missing invite token');
     return;
   }
-  res.render('invite', { token, error: undefined });
+  // The SPA invite page reads the token + error from the query string.
+  serveShell(res);
 });
 
 // ── POST /invite ───────────────────────────────────────────────────────────
@@ -31,28 +38,19 @@ inviteRouter.post('/invite', express.urlencoded({ extended: false }), async (req
   const { token, username, password } = req.body as Record<string, string>;
 
   if (!token || !username || !password) {
-    res.status(400).render('invite', { token: token ?? '', error: 'All fields are required.' });
+    redirectToInviteError(res, token ?? '', 'missing_fields');
     return;
   }
 
   if (password.length < 8) {
-    res.status(400).render('invite', {
-      token,
-      error: 'Password must be at least 8 characters.',
-    });
+    redirectToInviteError(res, token, 'password_too_short');
     return;
   }
 
   const outcome = await redeemInvite({ token, username, password });
 
   if (!outcome.ok) {
-    const messages: Record<typeof outcome.error, string> = {
-      INVALID_TOKEN: 'This invite link is invalid.',
-      EXPIRED_TOKEN: 'This invite link has expired.',
-      ALREADY_USED: 'This invite link has already been used.',
-      EMAIL_RACE: 'This invite link cannot be used — the email address has already been claimed.',
-    };
-    res.status(400).render('invite', { token, error: messages[outcome.error] });
+    redirectToInviteError(res, token, outcome.error);
     return;
   }
 

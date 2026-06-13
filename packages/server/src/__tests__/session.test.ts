@@ -251,7 +251,7 @@ describe('SSO short-circuit on GET /authorize', () => {
     expect(url.searchParams.get('state')).toBe('ssostate');
   });
 
-  it('shows login form when sso cookie is absent', async () => {
+  it('serves the login SPA shell (no redirect) when sso cookie is absent', async () => {
     const res = await request(app)
       .get('/authorize')
       .query({
@@ -261,6 +261,6 @@ describe('SSO short-circuit on GET /authorize', () => {
         state: '',
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain('<form');
+    expect(res.text).toContain('id="root"');
   });
 });

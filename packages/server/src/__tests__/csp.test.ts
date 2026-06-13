@@ -30,4 +30,18 @@ describe('Content-Security-Policy form-action', () => {
       expect(formAction).toContain(new URL(uri).origin);
     }
   });
+
+  it("allows inline styles (style-src 'unsafe-inline') for Radix UI", async () => {
+    const res = await request(app).get('/health');
+    const csp = res.headers['content-security-policy'] ?? '';
+
+    const styleSrc = csp
+      .split(';')
+      .map((d) => d.trim())
+      .find((d) => d.startsWith('style-src'));
+
+    expect(styleSrc).toBeDefined();
+    expect(styleSrc).toContain("'self'");
+    expect(styleSrc).toContain("'unsafe-inline'");
+  });
 });

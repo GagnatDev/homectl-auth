@@ -8,8 +8,15 @@
 import { Router, type IRouter } from 'express';
 import express from 'express';
 import { redeemReset } from '../modules/password-reset/password-reset.service';
+import { serveShell } from '../web-shell';
 
 export const resetPasswordRouter: IRouter = Router();
+
+/** Bounce back to the reset form with an error code the SPA maps to a message. */
+function redirectToResetError(res: import('express').Response, token: string, error: string): void {
+  const q = new URLSearchParams({ token, error });
+  res.redirect(302, `/reset-password?${q.toString()}`);
+}
 
 // ── GET /reset-password ────────────────────────────────────────────────────
 
@@ -19,7 +26,8 @@ resetPasswordRouter.get('/reset-password', (req, res) => {
     res.status(400).send('Missing reset token');
     return;
   }
-  res.render('reset-password', { token, error: undefined });
+  // The SPA reset page reads the token + error from the query string.
+  serveShell(res);
 });
 
 // ── POST /reset-password ───────────────────────────────────────────────────
@@ -31,31 +39,19 @@ resetPasswordRouter.post(
     const { token, password } = req.body as Record<string, string>;
 
     if (!token || !password) {
-      res.status(400).render('reset-password', {
-        token: token ?? '',
-        error: 'All fields are required.',
-      });
+      redirectToResetError(res, token ?? '', 'missing_fields');
       return;
     }
 
     if (password.length < 8) {
-      res.status(400).render('reset-password', {
-        token,
-        error: 'Password must be at least 8 characters.',
-      });
+      redirectToResetError(res, token, 'password_too_short');
       return;
     }
 
     const outcome = await redeemReset({ token, newPassword: password });
 
     if (!outcome.ok) {
-      const messages: Record<typeof outcome.error, string> = {
-        INVALID_TOKEN: 'This reset link is invalid.',
-        EXPIRED_TOKEN: 'This reset link has expired.',
-        ALREADY_USED: 'This reset link has already been used.',
-        USER_NOT_FOUND: 'Account not found.',
-      };
-      res.status(400).render('reset-password', { token, error: messages[outcome.error] });
+      redirectToResetError(res, token, outcome.error);
       return;
     }
 

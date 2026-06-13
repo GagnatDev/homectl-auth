@@ -22,6 +22,7 @@ import {
   isAllowed,
 } from './github-oauth.service';
 import { signAdminToken } from '../token/token.service';
+import { serveShell } from '../../web-shell';
 
 export const githubOauthRouter: IRouter = Router();
 
@@ -66,11 +67,21 @@ function setAdminTokenCookie(res: Response, token: string): void {
 }
 
 // ── GET /admin/login ─────────────────────────────────────────────────────────
+// Serves the SPA shell. The "Sign in with GitHub" button gets its URL (and the
+// CSRF state cookie) from GET /api/admin-login below.
 
 githubOauthRouter.get('/admin/login', (_req, res) => {
+  serveShell(res);
+});
+
+// ── GET /api/admin-login ───────────────────────────────────────────────────────
+// Public JSON: mints a fresh CSRF state, sets the state cookie, and returns the
+// GitHub authorize URL for the SPA login page to link to.
+
+githubOauthRouter.get('/api/admin-login', (_req, res) => {
   const state = randomBytes(32).toString('hex');
   setStateCookie(res, state);
-  res.render('admin/login', { authorizeUrl: buildAuthorizeUrl(state) });
+  res.json({ url: buildAuthorizeUrl(state) });
 });
 
 // ── GET /admin/github/callback ─────────────────────────────────────────────────
@@ -82,14 +93,15 @@ githubOauthRouter.get('/admin/github/callback', async (req, res) => {
 
   clearStateCookie(res);
 
-  // CSRF: the state echoed back by GitHub must match the cookie we set.
+  // CSRF: the state echoed back by GitHub must match the cookie we set. On any
+  // failure we bounce back to the SPA login page with an error code it renders.
   if (
     typeof state !== 'string' ||
     typeof code !== 'string' ||
     !expectedState ||
     state !== expectedState
   ) {
-    res.status(400).render('admin/error', { message: 'Invalid login state. Please try again.' });
+    res.redirect(302, '/admin/login?error=invalid_state');
     return;
   }
 
@@ -99,7 +111,7 @@ githubOauthRouter.get('/admin/github/callback', async (req, res) => {
 
     if (!isAllowed(user.id)) {
       logger.warn({ githubUserId: user.id, login: user.login }, 'admin login denied: not in allowlist');
-      res.status(403).render('admin/error', { message: 'This GitHub account is not authorized for admin access.' });
+      res.redirect(302, '/admin/login?error=not_authorized');
       return;
     }
 
@@ -111,6 +123,6 @@ githubOauthRouter.get('/admin/github/callback', async (req, res) => {
     res.redirect(302, '/admin');
   } catch (err) {
     logger.error({ err }, 'admin GitHub OAuth callback failed');
-    res.status(502).render('admin/error', { message: 'GitHub login failed. Please try again.' });
+    res.redirect(302, '/admin/login?error=github_failed');
   }
 });

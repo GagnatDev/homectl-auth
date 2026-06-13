@@ -6,7 +6,6 @@
  */
 
 import { Router, type IRouter } from 'express';
-import { join } from 'path';
 import { getApp, validateRedirectUri } from '../config/apps';
 import { verifyPassword } from '../modules/user/password.service';
 import { issueCode } from '../modules/auth-code/auth-code.service';
@@ -18,12 +17,42 @@ import {
   getSsoCookieValue,
 } from '../modules/session/session.service';
 import { findUserById } from '../modules/user/user.repository';
+import { serveShell } from '../web-shell';
 import express from 'express';
 
 export const authorizeRouter: IRouter = Router();
 
-// Serve EJS templates from src/views
-const VIEWS_DIR = join(__dirname, '..', 'views');
+/**
+ * Send the user back to the login page with an error code. The login form lives
+ * in the SPA, which reads `error` from the query string. We re-attach the OAuth
+ * params so the re-rendered form can post again.
+ */
+function redirectToLoginError(
+  res: import('express').Response,
+  params: { clientId: string; redirectUri: string; state: string; error: string },
+): void {
+  const q = new URLSearchParams({
+    response_type: 'code',
+    client_id: params.clientId,
+    redirect_uri: params.redirectUri,
+    error: params.error,
+  });
+  if (params.state) q.set('state', params.state);
+  res.redirect(302, `/authorize?${q.toString()}`);
+}
+
+// ── GET /api/apps/:clientId ──────────────────────────────────────────────────
+// Public: the SPA login page fetches the app's display name for its heading.
+// Exposes only id + name — never the client secret env or redirect URIs.
+
+authorizeRouter.get('/api/apps/:clientId', (req, res) => {
+  const app = getApp(req.params['clientId']!);
+  if (!app) {
+    res.status(404).json({ error: 'unknown_client' });
+    return;
+  }
+  res.json({ id: app.id, name: app.name });
+});
 
 // ── GET /authorize ─────────────────────────────────────────────────────────
 
@@ -72,13 +101,9 @@ authorizeRouter.get('/authorize', async (req, res) => {
     }
   }
 
-  res.render('login', {
-    appName: app.name,
-    clientId: client_id,
-    redirectUri: redirect_uri,
-    state: state ?? '',
-    error: undefined,
-  });
+  // Render the SPA shell; the React login page reads client_id / redirect_uri /
+  // state / error from the query string and the app name from /api/apps/:id.
+  serveShell(res);
 });
 
 // ── POST /login ────────────────────────────────────────────────────────────
@@ -112,25 +137,17 @@ authorizeRouter.post('/login', express.urlencoded({ extended: false }), async (r
     );
   })();
 
-  const renderError = (error: string) => {
-    res.status(401).render('login', {
-      appName: app.name,
-      clientId: client_id,
-      redirectUri: redirect_uri,
-      state: state ?? '',
-      error,
-    });
-  };
+  const loginErrorParams = { clientId: client_id, redirectUri: redirect_uri, state: state ?? '' };
 
   if (!userRows[0]) {
-    renderError('Invalid username or password.');
+    redirectToLoginError(res, { ...loginErrorParams, error: 'invalid_credentials' });
     return;
   }
 
   const user = userRows[0];
   const valid = await verifyPassword(password, user['password_hash'] as string);
   if (!valid) {
-    renderError('Invalid username or password.');
+    redirectToLoginError(res, { ...loginErrorParams, error: 'invalid_credentials' });
     return;
   }
 
@@ -139,13 +156,7 @@ authorizeRouter.post('/login', express.urlencoded({ extended: false }), async (r
   // Check app access
   const allowed = await hasAccess(userId, client_id);
   if (!allowed) {
-    res.status(403).render('login', {
-      appName: app.name,
-      clientId: client_id,
-      redirectUri: redirect_uri,
-      state: state ?? '',
-      error: 'You do not have access to this application.',
-    });
+    redirectToLoginError(res, { ...loginErrorParams, error: 'no_access' });
     return;
   }
 

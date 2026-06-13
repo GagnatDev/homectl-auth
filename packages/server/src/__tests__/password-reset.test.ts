@@ -103,8 +103,10 @@ describe('Password reset', () => {
       .type('form')
       .send({ token, password: 'NewPassword456!' });
 
-    expect(res.status).toBe(400);
-    expect(res.text).toContain('expired');
+    expect(res.status).toBe(302);
+    const url = new URL(res.headers['location'] as string, 'http://localhost');
+    expect(url.pathname).toBe('/reset-password');
+    expect(url.searchParams.get('error')).toBe('EXPIRED_TOKEN');
   });
 
   it('rejects a second use of the same reset token', async () => {
@@ -121,13 +123,17 @@ describe('Password reset', () => {
       .type('form')
       .send({ token, password: 'AnotherPassword789!' });
 
-    expect(res2.status).toBe(400);
+    expect(res2.status).toBe(302);
+    const url = new URL(res2.headers['location'] as string, 'http://localhost');
+    // A consumed reset token is removed, so a second attempt reads as invalid.
+    expect(url.searchParams.get('error')).toBe('INVALID_TOKEN');
   });
 
-  it('GET /reset-password?token=… renders the form', async () => {
+  it('GET /reset-password?token=… serves the SPA shell', async () => {
     const res = await request(app).get('/reset-password').query({ token: 'sometoken' });
     expect(res.status).toBe(200);
-    expect(res.text).toContain('Reset Password');
+    expect(res.headers['content-type']).toMatch(/html/);
+    expect(res.text).toContain('id="root"');
   });
 
   it('GET /reset-password without token returns 400', async () => {
