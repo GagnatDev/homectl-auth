@@ -65,6 +65,11 @@ spec:
                 secretKeyRef:
                   name: auth-secrets
                   key: WORKBENCH_CLIENT_SECRET
+            - name: AIVO_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secrets
+                  key: AIVO_CLIENT_SECRET
           volumeMounts:
             - name: apps-config
               mountPath: /app/apps.json

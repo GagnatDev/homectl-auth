@@ -40,5 +40,26 @@
         "rank": 2
       }
     ]
+  },
+  {
+    "id": "aivo",
+    "name": "Aivo",
+    "clientSecretEnv": "AIVO_CLIENT_SECRET",
+    "allowedRedirectUris": [
+      "http://localhost:5000/auth/callback"
+    ],
+    "allowedOrigins": [
+      "http://localhost:5000"
+    ],
+    "roles": [
+      {
+        "name": "member",
+        "rank": 1
+      },
+      {
+        "name": "admin",
+        "rank": 2
+      }
+    ]
   }
 ]

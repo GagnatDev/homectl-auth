@@ -30,5 +30,16 @@ data:
           { "name": "member", "rank": 1 },
           { "name": "admin", "rank": 2 }
         ]
+      },
+      {
+        "id": "aivo",
+        "name": "Aivo",
+        "clientSecretEnv": "AIVO_CLIENT_SECRET",
+        "allowedRedirectUris": ["https://aivo.homectl.no/auth/callback"],
+        "allowedOrigins": ["https://aivo.homectl.no"],
+        "roles": [
+          { "name": "member", "rank": 1 },
+          { "name": "admin", "rank": 2 }
+        ]
       }
     ]
