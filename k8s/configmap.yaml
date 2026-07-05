@@ -39,7 +39,7 @@ data:
         "allowedOrigins": ["https://aivo.homectl.no"],
         "roles": [
           { "name": "member", "rank": 1 },
-          { "name": "admin", "rank": 2 }
+          { "name": "owner", "rank": 2 }
         ]
       }
     ]
