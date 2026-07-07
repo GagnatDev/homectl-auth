@@ -163,6 +163,30 @@ describe('authMiddleware', () => {
     expect(res.headers['location']).toContain(`client_id=${CLIENT_ID}`);
   });
 
+  it('serves the HTML page instead of looping when a refresh cookie is present', async () => {
+    // A logged-in browser navigating to a page carries the per-app refresh
+    // cookie but no Bearer header (the access token lives in JS memory). The
+    // guardrail must let the request through so the SPA can bootstrap — NOT
+    // redirect to /authorize, which would loop back to the login screen.
+    const res = await request(app)
+      .get('/protected')
+      .set('Accept', 'text/html')
+      .set('Cookie', `homectl_refresh_${CLIENT_ID}=some-opaque-refresh-token`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Hello');
+  });
+
+  it('still redirects HTML requests to /authorize when only another app\'s refresh cookie is present', async () => {
+    const res = await request(app)
+      .get('/protected')
+      .set('Accept', 'text/html')
+      .set('Cookie', 'homectl_refresh_other-app=not-ours');
+
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toContain(`${AUTH_SERVICE_URL}/authorize`);
+  });
+
   it('sets a state cookie on browser redirect', async () => {
     const res = await request(app)
       .get('/protected')

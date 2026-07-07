@@ -268,10 +268,34 @@ const { authMiddleware, callbackHandler, logoutHandler } = createAuthClient({
   appBaseUrl: 'https://my-app.homectl.no',
 });
 
-app.use(authMiddleware);           // populates req.user on valid JWT
+// Gate your API/XHR routes only — these carry `Authorization: Bearer <token>`
+// via the browser helper's authedFetch and populate req.user on a valid JWT.
+app.use('/api', authMiddleware);
+
 app.get('/auth/callback', callbackHandler);
 app.post('/auth/logout', logoutHandler);
+
+// Serve your SPA / HTML shell WITHOUT authMiddleware. The page loads
+// unauthenticated; the browser helper's bootstrap() then fetches the access
+// token from the refresh cookie and decides whether to render the app or send
+// the user to login.
+app.get('*', serveSpaShell);
 ```
+
+> ⚠️ **Never put `authMiddleware` in front of routes that return HTML** — and
+> avoid a blanket `app.use(authMiddleware)` if the same app also serves your
+> SPA. Top-level browser navigations never carry a `Bearer` header (the access
+> token lives in JS memory and is only fetched by `bootstrap()` *after* the
+> shell loads), so gating HTML on the bearer sends every page load to
+> `/authorize` and loops straight back to the login screen. Gate `/api`
+> (bearer) and serve the shell unauthenticated; let `bootstrap()` make the
+> login decision.
+>
+> As a safety net, `authMiddleware` will **not** redirect an HTML request to
+> `/authorize` when this app's refresh cookie is present (i.e. a live session) —
+> it lets the request through so the SPA can bootstrap. It only redirects on a
+> genuine first visit with no session cookie. Gating only `/api` is still the
+> correct wiring.
 
 **In-cluster service discovery (optional).** Apps running in the same Kubernetes
 cluster can route the server-to-server calls (token exchange and JWKS fetch)
