@@ -273,6 +273,27 @@ app.get('/auth/callback', callbackHandler);
 app.post('/auth/logout', logoutHandler);
 ```
 
+**In-cluster service discovery (optional).** Apps running in the same Kubernetes
+cluster can route the server-to-server calls (token exchange and JWKS fetch)
+through the `homectl-auth` ClusterIP Service instead of the public ingress by
+setting `internalAuthServiceUrl`:
+
+```typescript
+const { authMiddleware, callbackHandler, logoutHandler } = createAuthClient({
+  authServiceUrl: 'https://auth.homectl.no',
+  internalAuthServiceUrl: 'http://homectl-auth.homectl.svc.cluster.local',
+  clientId: 'my-app',
+  clientSecret: process.env.MY_APP_CLIENT_SECRET!,
+  appBaseUrl: 'https://my-app.homectl.no',
+});
+```
+
+`authServiceUrl` stays the public URL — it is what the user's browser is
+redirected to (`/authorize`, `/logout`) and what the JWT `iss` claim is
+verified against, so it must always match the issuer the auth service signs
+tokens with. Apps in the `homectl` namespace can shorten the internal URL to
+`http://homectl-auth`.
+
 ### 5. Browser helper
 
 ```typescript
