@@ -8,6 +8,7 @@ import { jwksRouter } from './routes/jwks.router';
 import { authorizeRouter } from './routes/authorize.router';
 import { tokenRouter } from './routes/token.router';
 import { sessionRouter } from './routes/session.router';
+import { internalRouter } from './routes/internal.router';
 import { inviteRouter } from './routes/invite.router';
 import { resetPasswordRouter } from './routes/reset-password.router';
 import { adminRouter } from './routes/admin/admin.router';
@@ -109,6 +110,9 @@ export function createApp(): Express {
   app.use(authorizeRouter);
   app.use(tokenRouter);
   app.use(sessionRouter);
+  // Server-to-server, client-authenticated endpoints for in-cluster callers
+  // (e.g. an auth sidecar). Reached via the ClusterIP Service, not the ingress.
+  app.use(internalRouter);
   app.use(inviteRouter);
   app.use(resetPasswordRouter);
   // GitHub OAuth login routes must precede adminRouter so /admin/login and
@@ -122,7 +126,7 @@ export function createApp(): Express {
   // and well-known paths never fall here — they 404 as JSON instead.
   app.get('*', (req, res) => {
     const isApiPath =
-      /^\/(admin\/api|api|token|refresh|logout|health|\.well-known)(\/|$)/.test(req.path);
+      /^\/(admin\/api|api|token|refresh|logout|health|internal|\.well-known)(\/|$)/.test(req.path);
     if (isApiPath || !req.accepts('html')) {
       res.status(404).json({ error: 'not_found' });
       return;

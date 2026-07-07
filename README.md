@@ -318,6 +318,15 @@ verified against, so it must always match the issuer the auth service signs
 tokens with. Apps in the `homectl` namespace can shorten the internal URL to
 `http://homectl-auth`.
 
+**Sidecar / backend-mediated auth (forward-auth).** For apps that want the
+frontend to be entirely auth-agnostic and to keep browser↔auth traffic off the
+public ingress, homectl-auth exposes a server-to-server refresh endpoint —
+`POST /internal/refresh` (`{ client_id, client_secret, refresh_token }` →
+access token + rotated refresh token in the body). It is the machine analogue of
+`POST /refresh` (no `Origin`, no cookies) and is meant to be called in-cluster.
+See [ADR 0001](docs/adr/0001-forward-auth-sidecar.md) and the sidecar sketch in
+[`docs/sidecar/`](docs/sidecar/README.md).
+
 ### 5. Browser helper
 
 ```typescript
