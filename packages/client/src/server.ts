@@ -8,6 +8,8 @@
  *
  *   const { authMiddleware, callbackHandler, logoutHandler } = createAuthClient({
  *     authServiceUrl: 'https://auth.homectl.no',
+ *     // Optional — route token exchange + JWKS via in-cluster service discovery:
+ *     internalAuthServiceUrl: 'http://homectl-auth.homectl.svc.cluster.local',
  *     clientId: 'travel-journal',
  *     clientSecret: process.env.CLIENT_SECRET!,
  *     appBaseUrl: 'https://reisedagbok.homectl.no',
@@ -25,9 +27,22 @@ import { randomBytes, createHmac } from 'crypto';
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type AuthClientOptions = {
-  /** Base URL of the auth service, e.g. https://auth.homectl.no */
+  /**
+   * Public base URL of the auth service, e.g. https://auth.homectl.no.
+   * Used for browser-facing flows (the /authorize redirect and the logout
+   * page) and as the expected JWT `iss` claim — it must match the issuer the
+   * auth service signs tokens with, regardless of how this app reaches it.
+   */
   authServiceUrl: string;
-  /** JWKS URL — defaults to ${authServiceUrl}/.well-known/jwks.json */
+  /**
+   * Base URL for server-to-server calls (token exchange and, by default, the
+   * JWKS fetch). Set this to an internal service-discovery address — e.g.
+   * http://homectl-auth.homectl.svc.cluster.local — to keep backend traffic
+   * in-cluster. Defaults to authServiceUrl. Browser redirects and issuer
+   * verification always use authServiceUrl.
+   */
+  internalAuthServiceUrl?: string;
+  /** JWKS URL — defaults to ${internalAuthServiceUrl ?? authServiceUrl}/.well-known/jwks.json */
   jwksUrl?: string;
   /** The app's client_id as registered in the auth service config */
   clientId: string;
@@ -111,7 +126,10 @@ export function createAuthClient(options: AuthClientOptions): AuthClientResult {
     callbackPath = '/auth/callback',
   } = options;
 
-  const jwksUrl = options.jwksUrl ?? `${authServiceUrl}/.well-known/jwks.json`;
+  // Server-to-server calls (token exchange, JWKS) go to the internal URL when
+  // one is configured; everything the browser touches stays on authServiceUrl.
+  const internalUrl = options.internalAuthServiceUrl ?? authServiceUrl;
+  const jwksUrl = options.jwksUrl ?? `${internalUrl}/.well-known/jwks.json`;
   const JWKS = options._jwksProvider ?? createRemoteJWKSet(new URL(jwksUrl));
   const redirectUri = `${appBaseUrl}${callbackPath}`;
 
@@ -214,7 +232,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClientResult {
     // Exchange code for token (server-to-server)
     let tokenRes: Response;
     try {
-      const response = await fetch(`${authServiceUrl}/token`, {
+      const response = await fetch(`${internalUrl}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

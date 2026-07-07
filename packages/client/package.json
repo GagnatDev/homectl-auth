@@ -1,6 +1,6 @@
 {
   "name": "@gagnatdev/homectl-auth-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Client package for homectl-auth — server-side Express middleware and browser-side token helper",
   "exports": {
     "./server": {
