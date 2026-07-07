@@ -54,6 +54,11 @@ function extractCookie(cookies: string | string[], name: string): string | undef
   return found.split(';')[0]!.split('=').slice(1).join('=');
 }
 
+function findCookieHeader(cookies: string | string[], name: string): string | undefined {
+  const list = Array.isArray(cookies) ? cookies : [cookies];
+  return list.find((c) => c.startsWith(`${name}=`));
+}
+
 // ── Refresh token rotation ─────────────────────────────────────────────────
 
 describe('POST /refresh', () => {
@@ -128,6 +133,20 @@ describe('POST /refresh', () => {
     const payload = await verifyAccessToken(res.body.access_token, TEST_APP_ID);
     expect(payload.aud).toBe(TEST_APP_ID);
     expect(payload.sub).toBe(user.id);
+  });
+
+  it('scopes the refresh cookie to Domain=.homectl.no', async () => {
+    const prevDomain = process.env['REFRESH_COOKIE_DOMAIN'];
+    process.env['REFRESH_COOKIE_DOMAIN'] = '.homectl.no';
+    try {
+      const user = await createTestUserWithAccess(TEST_APP_ID, 'editor');
+      const setCookies = await loginAndGetCookies(user.username, user.plainPassword);
+      const refreshHeader = findCookieHeader(setCookies, `homectl_refresh_${TEST_APP_ID}`);
+      expect(refreshHeader).toContain('Domain=.homectl.no');
+    } finally {
+      if (prevDomain === undefined) delete process.env['REFRESH_COOKIE_DOMAIN'];
+      else process.env['REFRESH_COOKIE_DOMAIN'] = prevDomain;
+    }
   });
 });
 

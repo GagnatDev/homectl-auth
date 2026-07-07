@@ -117,7 +117,7 @@ PostgreSQL
 2. App server: no token → redirect to auth.homectl.no/authorize?client_id=...&state=nonce
 3. User submits credentials at auth.homectl.no/login
 4. Auth service: validates credentials, verifies app access
-5. Sets homectl_refresh_<clientId> cookie (HttpOnly, SameSite=Strict, domain=auth.homectl.no)
+5. Sets homectl_refresh_<clientId> cookie (HttpOnly, SameSite=Strict, domain=.homectl.no)
 6. Sets homectl_sso cookie (for SSO on subsequent apps)
 7. Redirects to redirect_uri?code=...&state=nonce
 8. App server: exchanges code for access token (server-to-server POST /token)
