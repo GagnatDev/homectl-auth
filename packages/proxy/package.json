@@ -1,0 +1,32 @@
+{
+  "name": "@homectl/proxy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "homectl-auth-proxy — forward-auth sidecar. Deployable service (Docker image), not published to npm.",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "http-proxy-middleware": "^2.0.6",
+    "jose": "^5.2.4",
+    "pino": "^9.1.0",
+    "pino-http": "^10.2.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.0",
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0",
+    "tsx": "^4.8.2",
+    "typescript": "^5.4.5",
+    "vitest": "^1.5.3"
+  }
+}

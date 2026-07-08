@@ -201,7 +201,11 @@ This is strictly additive. Nothing about the existing integration changes:
 - [x] `POST /internal/refresh` endpoint + `verifyClientSecret`
 - [x] SPA-shell fallback excludes `/internal/*`
 - [x] Client-library guardrail against the HTML auth loop + README fix
-- [ ] `homectl-auth-proxy` sidecar image (reference sketch in
-      [`docs/sidecar/`](../sidecar/README.md))
+- [x] `homectl-auth-proxy` sidecar image (`packages/proxy`, `Dockerfile.proxy`,
+      CI build/push) with integration, migration, and troubleshooting guides in
+      [`docs/sidecar/`](../sidecar/). The original reference sketch is superseded
+      by the real package + guides.
+- [ ] Server-to-server code exchange returning the refresh token in the body
+      (lets the sidecar stop reusing the browser refresh cookie — follow-up)
 - [ ] Rotation grace window in `rotateSession` (recommended follow-up)
 - [ ] NetworkPolicy / ingress exclusion restricting `/internal/*` to in-cluster
