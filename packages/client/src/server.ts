@@ -76,6 +76,27 @@ declare global {
   }
 }
 
+// ── Refresh cookie detection ─────────────────────────────────────────────────
+
+/** Server-side per-app refresh cookie name — matches homectl-auth's `homectl_refresh_<clientId>`. */
+const REFRESH_COOKIE_PREFIX = 'homectl_refresh_';
+
+/**
+ * Whether the request carries this app's refresh cookie. Reads cookie-parser's
+ * `req.cookies` when present, otherwise parses the raw `Cookie` header so the
+ * guardrail works even if cookie-parser is not mounted.
+ */
+function hasRefreshCookie(req: Request, clientId: string): boolean {
+  const name = `${REFRESH_COOKIE_PREFIX}${clientId}`;
+  const parsed = (req as Request & { cookies?: Record<string, string> }).cookies;
+  if (parsed && typeof parsed[name] === 'string' && parsed[name].length > 0) {
+    return true;
+  }
+  const raw = req.headers['cookie'];
+  if (!raw) return false;
+  return raw.split(';').some((c) => c.trimStart().startsWith(`${name}=`));
+}
+
 // ── State cookie ───────────────────────────────────────────────────────────
 
 const STATE_COOKIE_NAME = 'homectl_auth_state';
@@ -149,11 +170,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClientResult {
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
 
     if (!token) {
-      if (isHtmlRequest(req)) {
-        redirectToLogin(req, res);
-      } else {
-        res.status(401).json({ error: 'unauthorized' });
-      }
+      handleUnauthenticated(req, res, next, 'unauthorized');
       return;
     }
 
@@ -167,13 +184,45 @@ export function createAuthClient(options: AuthClientOptions): AuthClientResult {
       req.user = extractUser(payload, clientId);
       next();
     } catch {
-      if (isHtmlRequest(req)) {
-        redirectToLogin(req, res);
-      } else {
-        res.status(401).json({ error: 'invalid_token' });
-      }
+      handleUnauthenticated(req, res, next, 'invalid_token');
     }
   };
+
+  /**
+   * Respond to a request that carries no valid access token.
+   *
+   * API/XHR requests get a hard 401 — the browser helper's authedFetch will
+   * bootstrap a token and retry.
+   *
+   * Top-level HTML navigations are the trap: a browser *never* attaches a
+   * Bearer header to a navigation, and the access token lives in JS memory
+   * (fetched by bootstrap() only after the shell loads). A naive redirect to
+   * /authorize therefore loops forever once the user is logged in:
+   *   page → /authorize → (SSO) → back to page → still no header → /authorize → …
+   *
+   * Guardrail: if the request already carries this app's refresh cookie the
+   * user has a live session, so let the request through and let the SPA
+   * bootstrap its token. Only redirect to /authorize on a genuine first visit
+   * (no session cookie). Gating only your API routes is still the correct
+   * wiring — this is a safety net, not a licence to put authMiddleware in front
+   * of HTML.
+   */
+  function handleUnauthenticated(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    apiError: string,
+  ): void {
+    if (!isHtmlRequest(req)) {
+      res.status(401).json({ error: apiError });
+      return;
+    }
+    if (hasRefreshCookie(req, clientId)) {
+      next();
+      return;
+    }
+    redirectToLogin(req, res);
+  }
 
   function redirectToLogin(req: Request, res: Response): void {
     const nonce = randomBytes(16).toString('hex');
