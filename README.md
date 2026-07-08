@@ -374,6 +374,8 @@ The deployment uses three Kubernetes Secrets:
 
 **`auth-terraform-secrets`** — created automatically by `terraform apply` in `homectl-infra`. Contains `DATABASE_URL` pointing at the dedicated `auth` database user. No manual step needed.
 
+**`auth-client-secrets`** — created automatically by `terraform apply` in `homectl-infra`, generated from the registered apps and config. Holds the bcrypt hash of each app's client secret, one entry per registered app; each key matches the app's `clientSecretEnv` in `apps.json` (e.g. `WORKBENCH_CLIENT_SECRET`) and is consumed via `envFrom`. No manual step needed.
+
 **`auth-secrets`** — hand-managed. Create once with your own values:
 
 ```bash
@@ -384,14 +386,6 @@ kubectl create secret generic auth-secrets \
   --from-literal=GITHUB_ADMIN_CLIENT_ID='...' \
   --from-literal=GITHUB_ADMIN_CLIENT_SECRET='...' \
   --from-literal=GITHUB_ADMIN_USER_IDS='...'
-```
-
-**`auth-client-secrets`** — hand-managed. Holds the bcrypt hash of each app's client secret, one entry per registered app. Consumed via `envFrom`, so each key must match the app's `clientSecretEnv` in `apps.json`:
-
-```bash
-kubectl create secret generic auth-client-secrets \
-  --namespace homectl \
-  --from-literal=WORKBENCH_CLIENT_SECRET='$2b$12$...'
 ```
 
 Once the secret is created, store `private_key.pem` in a secure offline location (password manager or encrypted vault) and delete it from disk. You only need it again if you rotate the key pair. `public_key.pem` is less sensitive — consuming apps should fetch the public key dynamically via `/.well-known/jwks.json` rather than storing it.
@@ -415,7 +409,7 @@ This transfers ownership of all tables, sequences, and other objects in a single
 | `auth-terraform-secrets` | `DATABASE_URL` | PostgreSQL connection string — managed by Terraform |
 | `auth-secrets` | `RS256_PRIVATE_KEY_PEM` | Base64-encoded RS256 private key PEM (PKCS#8) — used to sign JWTs |
 | `auth-secrets` | `RS256_PUBLIC_KEY_PEM` | Base64-encoded RS256 public key PEM (SPKI) — used to derive JWKS `kid` and serve `/.well-known/jwks.json` |
-| `auth-client-secrets` | `<APP>_CLIENT_SECRET` | bcrypt hash of each app's client secret |
+| `auth-client-secrets` | `<APP>_CLIENT_SECRET` | bcrypt hash of each app's client secret — managed by Terraform |
 
 ### Required GitHub Actions secrets
 
