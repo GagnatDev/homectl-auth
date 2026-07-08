@@ -370,7 +370,7 @@ CI/CD (`push` to `main`) handles everything: build and push the image, substitut
 
 ### First-time bootstrap
 
-The deployment uses two Kubernetes Secrets:
+The deployment uses three Kubernetes Secrets:
 
 **`auth-terraform-secrets`** — created automatically by `terraform apply` in `homectl-infra`. Contains `DATABASE_URL` pointing at the dedicated `auth` database user. No manual step needed.
 
@@ -383,8 +383,14 @@ kubectl create secret generic auth-secrets \
   --from-literal=RS256_PUBLIC_KEY_PEM="$(base64 -w0 < public_key.pem)" \
   --from-literal=GITHUB_ADMIN_CLIENT_ID='...' \
   --from-literal=GITHUB_ADMIN_CLIENT_SECRET='...' \
-  --from-literal=GITHUB_ADMIN_USER_IDS='...' \
-  --from-literal=TRAVEL_JOURNAL_CLIENT_SECRET='$2b$12$...' \
+  --from-literal=GITHUB_ADMIN_USER_IDS='...'
+```
+
+**`auth-client-secrets`** — hand-managed. Holds the bcrypt hash of each app's client secret, one entry per registered app. Consumed via `envFrom`, so each key must match the app's `clientSecretEnv` in `apps.json`:
+
+```bash
+kubectl create secret generic auth-client-secrets \
+  --namespace homectl \
   --from-literal=WORKBENCH_CLIENT_SECRET='$2b$12$...'
 ```
 
@@ -409,7 +415,7 @@ This transfers ownership of all tables, sequences, and other objects in a single
 | `auth-terraform-secrets` | `DATABASE_URL` | PostgreSQL connection string — managed by Terraform |
 | `auth-secrets` | `RS256_PRIVATE_KEY_PEM` | Base64-encoded RS256 private key PEM (PKCS#8) — used to sign JWTs |
 | `auth-secrets` | `RS256_PUBLIC_KEY_PEM` | Base64-encoded RS256 public key PEM (SPKI) — used to derive JWKS `kid` and serve `/.well-known/jwks.json` |
-| `auth-secrets` | `<APP>_CLIENT_SECRET` | bcrypt hash of each app's client secret |
+| `auth-client-secrets` | `<APP>_CLIENT_SECRET` | bcrypt hash of each app's client secret |
 
 ### Required GitHub Actions secrets
 

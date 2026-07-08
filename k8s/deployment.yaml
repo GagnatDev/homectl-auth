@@ -23,6 +23,8 @@ spec:
           envFrom:
             - secretRef:
                 name: auth-terraform-secrets   # Terraform-managed: DATABASE_URL
+            - secretRef:
+                name: auth-client-secrets      # Per-app client secret hashes, e.g. WORKBENCH_CLIENT_SECRET
           env:
             - name: NODE_ENV
               value: production
@@ -54,17 +56,6 @@ spec:
                 secretKeyRef:
                   name: auth-secrets
                   key: GITHUB_ADMIN_USER_IDS
-            # Per-app client secret hashes — add one entry per registered app
-            - name: TRAVEL_JOURNAL_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: auth-secrets
-                  key: TRAVEL_JOURNAL_CLIENT_SECRET
-            - name: WORKBENCH_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: auth-secrets
-                  key: WORKBENCH_CLIENT_SECRET
           volumeMounts:
             - name: apps-config
               mountPath: /app/apps.json
