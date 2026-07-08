@@ -11,6 +11,7 @@ Issues RS256-signed JWTs to all apps on the domain. Users have one account and o
 | `packages/server` | The auth service — Express + TypeScript + Postgres |
 | `packages/web` | The GUI — a React + TypeScript + Tailwind (shadcn/ui) SPA, built with Vite and served by the server |
 | `packages/client` | `@gagnatdev/homectl-auth-client` — integration library for consuming apps |
+| `packages/proxy` | `homectl-auth-proxy` — forward-auth sidecar; a deployable Docker image (not published to npm) that runs beside a consuming app. See [docs/sidecar/integration.md](docs/sidecar/integration.md) |
 
 ## Quick Start (local dev)
 
@@ -191,6 +192,25 @@ The `publish` workflow triggers on the tag, builds the package, and publishes it
 ---
 
 ## Integrating a New App
+
+There are two supported integration styles. Both are first-class; pick one.
+
+- **Forward-auth sidecar (recommended).** Add the `homectl-auth-proxy` container
+  to your pod and point ingress at it. Your **frontend holds no token and makes
+  only same-origin requests**, and your **backend reads a verified identity
+  header** — no auth code in either. Refresh and token exchange stay in-cluster.
+  This is the path that avoids the login-loop and `Origin` footguns described in
+  the [PRD](docs/prd-sidecar-proxy.md). Full walkthrough:
+  **[docs/sidecar/integration.md](docs/sidecar/integration.md)** (migrating an
+  existing app: [docs/sidecar/migration.md](docs/sidecar/migration.md);
+  troubleshooting: [docs/sidecar/troubleshooting.md](docs/sidecar/troubleshooting.md)).
+
+- **Client library (`@gagnatdev/homectl-auth-client`).** Wire auth into your
+  Node/Express app and SPA directly, as described below. Still fully supported.
+
+The steps below cover the **client library** path. The sidecar reuses steps 1–2
+(app registration + client secret) and then replaces steps 3–5 entirely — see
+its guide.
 
 ### 1. Register the app
 

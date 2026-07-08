@@ -45,19 +45,23 @@ spec:
               value: https://workbench.homectl.no
             - name: UPSTREAM
               value: http://127.0.0.1:3000
-            - name: CLIENT_ID
+            - name: AUTH_CLIENT_ID
               value: workbench
-            - name: CLIENT_SECRET
+            - name: AUTH_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: workbench-auth
-                  key: CLIENT_SECRET # plaintext secret; auth stores its bcrypt hash
+                  key: AUTH_CLIENT_SECRET # plaintext secret; auth stores its bcrypt hash
             - name: COOKIE_KEY
               valueFrom:
                 secretKeyRef:
                   name: workbench-auth
                   key: COOKIE_KEY # 32-byte base64; SAME value across all replicas
           readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 4180
+          livenessProbe:
             httpGet:
               path: /healthz
               port: 4180

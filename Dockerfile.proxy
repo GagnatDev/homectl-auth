@@ -1,0 +1,45 @@
+# homectl-auth-proxy — forward-auth sidecar image.
+#
+# Deployed as a second container inside a consuming app's pod (NOT in the
+# homectl namespace). Mirrors the main Dockerfile's multi-stage pnpm pattern.
+
+# ── Build stage ──────────────────────────────────────────────────────────────
+FROM node:24-alpine AS builder
+
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+WORKDIR /app
+
+# Install dependencies (leverage layer cache). All workspace package.json files
+# are needed so pnpm can resolve the workspace against the frozen lockfile.
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY packages/server/package.json ./packages/server/
+COPY packages/client/package.json ./packages/client/
+COPY packages/web/package.json ./packages/web/
+COPY packages/proxy/package.json ./packages/proxy/
+RUN pnpm install --frozen-lockfile --prod=false
+
+# Copy source and build (the proxy has no workspace deps, so only its source is
+# needed).
+COPY tsconfig.base.json ./
+COPY packages/proxy ./packages/proxy
+
+RUN pnpm --filter @homectl/proxy build
+
+# Prune to a self-contained production deployment (built dist + prod deps).
+RUN pnpm --filter @homectl/proxy deploy --prod --legacy /app/deploy
+
+# ── Runtime stage ─────────────────────────────────────────────────────────────
+FROM node:24-alpine AS runtime
+
+WORKDIR /app
+
+COPY --from=builder /app/deploy .
+
+# Create non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+EXPOSE 4180
+
+CMD ["node", "dist/index.js"]

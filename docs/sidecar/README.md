@@ -1,10 +1,24 @@
-# `homectl-auth-proxy` — forward-auth sidecar (sketch)
+# `homectl-auth-proxy` — forward-auth sidecar (sketch, **superseded**)
+
+> **⚠️ Superseded.** The sidecar is now implemented for real in
+> [`packages/proxy`](../../packages/proxy) and shipped as the `homectl-auth-proxy`
+> Docker image (`Dockerfile.proxy`). Use the production guides, not this sketch:
+>
+> - **[integration.md](./integration.md)** — adopt the sidecar in a new app
+>   (config, full K8s manifest, reading identity, local dev, security).
+> - **[migration.md](./migration.md)** — move an app off
+>   `@gagnatdev/homectl-auth-client`.
+> - **[troubleshooting.md](./troubleshooting.md)** — every known failure mode.
+>
+> This file is kept for historical context only. The real implementation
+> differs in a few details (env vars are `AUTH_CLIENT_ID` / `AUTH_CLIENT_SECRET`;
+> it adds CSRF `state` verification, `/readyz`, structured logging, timeouts,
+> and reuses the `homectl_refresh_<clientId>` cookie for the first refresh
+> token). Prefer the guides above.
 
 A reference sketch of the forward-auth sidecar described in
 [ADR 0001](../adr/0001-forward-auth-sidecar.md). It is intentionally minimal —
 enough to show the flow, the state model, and the contract with homectl-auth.
-It is **not** wired into this repo's build; copy it into its own service (or
-adapt `oauth2-proxy`) when you productionise it.
 
 ## What it does
 
