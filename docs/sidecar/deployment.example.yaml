@@ -79,17 +79,16 @@ spec:
       port: 80
       targetPort: 4180 # → the sidecar, not the app
 ---
-# Defense-in-depth: keep /internal/* on homectl-auth reachable only from inside
-# the cluster. Client-secret auth already guards it, but this removes it from the
-# public ingress surface entirely. (Illustrative — align with your ingress.)
+# The ingress needs no special handling for /internal/*: it points at the
+# sidecar, and a request to https://workbench.homectl.no/internal/* is proxied to
+# THIS app's upstream, never to homectl-auth. homectl-auth's /internal/refresh is
+# reached only in-cluster (via INTERNAL_AUTH_URL) and is guarded by client-secret
+# auth; see integration.md §8.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: workbench
   namespace: homectl
-  annotations:
-    nginx.ingress.kubernetes.io/server-snippet: |
-      location ~ ^/internal/ { return 404; }
 spec:
   rules:
     - host: workbench.homectl.no

@@ -241,10 +241,6 @@ kind: Ingress
 metadata:
   name: workbench
   namespace: homectl
-  annotations:
-    # Defense in depth: never serve /internal/* from a public host.
-    nginx.ingress.kubernetes.io/server-snippet: |
-      location ~ ^/internal/ { return 404; }
 spec:
   rules:
     - host: workbench.homectl.no
@@ -261,6 +257,12 @@ spec:
 
 The critical wiring facts: **ingress → Service:80 → sidecar:4180 → app:3000**.
 The app port is never a Service target and never an ingress backend.
+
+Your ingress needs no special handling for `/internal/*`: it points at the
+sidecar, and a request to `https://workbench.homectl.no/internal/...` is proxied
+to your app's own upstream — it never reaches homectl-auth's `/internal/refresh`
+(the sidecar calls that only in-cluster). See [Security notes](#8-security-notes)
+for how that endpoint is reached and secured.
 
 ---
 
@@ -440,11 +442,24 @@ These are not optional — they are what makes the injected header trustworthy.
   injecting its own. So your app may trust those headers *provided* the previous
   point holds. (There is a regression test asserting a forged inbound header is
   stripped.)
-- **Restrict `/internal/*` to in-cluster traffic.** `/internal/refresh` is
-  client-secret authenticated (no worse than `/token`), but keep it off the
-  public surface as defense in depth. Use the ingress `server-snippet` shown in
-  §3 and/or a `NetworkPolicy` allowing `/internal/*` only from in-cluster
-  sources.
+- **`/internal/*` is an in-cluster, machine-to-machine surface.** The sidecar
+  refreshes tokens by calling `POST /internal/refresh` on homectl-auth over
+  `INTERNAL_AUTH_URL` (the ClusterIP Service) — always in-cluster, never through
+  the public ingress. It is authenticated with `client_id` + `client_secret`
+  (constant-time compare — the same trust boundary as `/token`) and never relies
+  on a browser `Origin` or cookies. That client-secret check *is* the security
+  boundary: the returned tokens are only ever issued to a caller that holds the
+  secret.
+  - You do not need to do anything on your app's ingress for this. A request to
+    `https://<your-app>/internal/*` is proxied by the sidecar to your app's own
+    upstream and never reaches homectl-auth, so there is nothing to expose or
+    restrict there.
+  - homectl-auth keeps `/internal/*` on its in-cluster surface as defense in
+    depth — reachability should be treated as in-cluster-only, even though the
+    client-secret auth is what actually protects it. If you want that enforced at
+    the network layer, do it **at homectl-auth** (e.g. a `NetworkPolicy`
+    restricting which pods may reach its Service), not on individual app
+    ingresses.
 - **CSRF on callback.** The sidecar sets a signed, single-use `state` cookie
   before redirecting to `/authorize` and rejects a callback whose `state` does
   not match. A forged callback cannot establish a session.
