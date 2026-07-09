@@ -8,6 +8,8 @@
  *
  *   const { authMiddleware, callbackHandler, logoutHandler } = createAuthClient({
  *     authServiceUrl: 'https://auth.homectl.no',
+ *     // Optional — route token exchange + JWKS via in-cluster service discovery:
+ *     internalAuthServiceUrl: 'http://homectl-auth.homectl.svc.cluster.local',
  *     clientId: 'travel-journal',
  *     clientSecret: process.env.CLIENT_SECRET!,
  *     appBaseUrl: 'https://reisedagbok.homectl.no',
@@ -25,9 +27,22 @@ import { randomBytes, createHmac } from 'crypto';
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type AuthClientOptions = {
-  /** Base URL of the auth service, e.g. https://auth.homectl.no */
+  /**
+   * Public base URL of the auth service, e.g. https://auth.homectl.no.
+   * Used for browser-facing flows (the /authorize redirect and the logout
+   * page) and as the expected JWT `iss` claim — it must match the issuer the
+   * auth service signs tokens with, regardless of how this app reaches it.
+   */
   authServiceUrl: string;
-  /** JWKS URL — defaults to ${authServiceUrl}/.well-known/jwks.json */
+  /**
+   * Base URL for server-to-server calls (token exchange and, by default, the
+   * JWKS fetch). Set this to an internal service-discovery address — e.g.
+   * http://homectl-auth.homectl.svc.cluster.local — to keep backend traffic
+   * in-cluster. Defaults to authServiceUrl. Browser redirects and issuer
+   * verification always use authServiceUrl.
+   */
+  internalAuthServiceUrl?: string;
+  /** JWKS URL — defaults to ${internalAuthServiceUrl ?? authServiceUrl}/.well-known/jwks.json */
   jwksUrl?: string;
   /** The app's client_id as registered in the auth service config */
   clientId: string;
@@ -59,6 +74,27 @@ declare global {
       user?: AuthUser;
     }
   }
+}
+
+// ── Refresh cookie detection ─────────────────────────────────────────────────
+
+/** Server-side per-app refresh cookie name — matches homectl-auth's `homectl_refresh_<clientId>`. */
+const REFRESH_COOKIE_PREFIX = 'homectl_refresh_';
+
+/**
+ * Whether the request carries this app's refresh cookie. Reads cookie-parser's
+ * `req.cookies` when present, otherwise parses the raw `Cookie` header so the
+ * guardrail works even if cookie-parser is not mounted.
+ */
+function hasRefreshCookie(req: Request, clientId: string): boolean {
+  const name = `${REFRESH_COOKIE_PREFIX}${clientId}`;
+  const parsed = (req as Request & { cookies?: Record<string, string> }).cookies;
+  if (parsed && typeof parsed[name] === 'string' && parsed[name].length > 0) {
+    return true;
+  }
+  const raw = req.headers['cookie'];
+  if (!raw) return false;
+  return raw.split(';').some((c) => c.trimStart().startsWith(`${name}=`));
 }
 
 // ── State cookie ───────────────────────────────────────────────────────────
@@ -111,7 +147,10 @@ export function createAuthClient(options: AuthClientOptions): AuthClientResult {
     callbackPath = '/auth/callback',
   } = options;
 
-  const jwksUrl = options.jwksUrl ?? `${authServiceUrl}/.well-known/jwks.json`;
+  // Server-to-server calls (token exchange, JWKS) go to the internal URL when
+  // one is configured; everything the browser touches stays on authServiceUrl.
+  const internalUrl = options.internalAuthServiceUrl ?? authServiceUrl;
+  const jwksUrl = options.jwksUrl ?? `${internalUrl}/.well-known/jwks.json`;
   const JWKS = options._jwksProvider ?? createRemoteJWKSet(new URL(jwksUrl));
   const redirectUri = `${appBaseUrl}${callbackPath}`;
 
@@ -131,11 +170,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClientResult {
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
 
     if (!token) {
-      if (isHtmlRequest(req)) {
-        redirectToLogin(req, res);
-      } else {
-        res.status(401).json({ error: 'unauthorized' });
-      }
+      handleUnauthenticated(req, res, next, 'unauthorized');
       return;
     }
 
@@ -149,13 +184,45 @@ export function createAuthClient(options: AuthClientOptions): AuthClientResult {
       req.user = extractUser(payload, clientId);
       next();
     } catch {
-      if (isHtmlRequest(req)) {
-        redirectToLogin(req, res);
-      } else {
-        res.status(401).json({ error: 'invalid_token' });
-      }
+      handleUnauthenticated(req, res, next, 'invalid_token');
     }
   };
+
+  /**
+   * Respond to a request that carries no valid access token.
+   *
+   * API/XHR requests get a hard 401 — the browser helper's authedFetch will
+   * bootstrap a token and retry.
+   *
+   * Top-level HTML navigations are the trap: a browser *never* attaches a
+   * Bearer header to a navigation, and the access token lives in JS memory
+   * (fetched by bootstrap() only after the shell loads). A naive redirect to
+   * /authorize therefore loops forever once the user is logged in:
+   *   page → /authorize → (SSO) → back to page → still no header → /authorize → …
+   *
+   * Guardrail: if the request already carries this app's refresh cookie the
+   * user has a live session, so let the request through and let the SPA
+   * bootstrap its token. Only redirect to /authorize on a genuine first visit
+   * (no session cookie). Gating only your API routes is still the correct
+   * wiring — this is a safety net, not a licence to put authMiddleware in front
+   * of HTML.
+   */
+  function handleUnauthenticated(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    apiError: string,
+  ): void {
+    if (!isHtmlRequest(req)) {
+      res.status(401).json({ error: apiError });
+      return;
+    }
+    if (hasRefreshCookie(req, clientId)) {
+      next();
+      return;
+    }
+    redirectToLogin(req, res);
+  }
 
   function redirectToLogin(req: Request, res: Response): void {
     const nonce = randomBytes(16).toString('hex');
@@ -214,7 +281,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClientResult {
     // Exchange code for token (server-to-server)
     let tokenRes: Response;
     try {
-      const response = await fetch(`${authServiceUrl}/token`, {
+      const response = await fetch(`${internalUrl}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

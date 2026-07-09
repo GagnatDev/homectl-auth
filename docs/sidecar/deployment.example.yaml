@@ -1,0 +1,104 @@
+# Example: an app Deployment with the homectl-auth-proxy sidecar.
+#
+# Ingress targets the sidecar (:4180); the sidecar proxies to the app (:3000)
+# over pod-local loopback. This is an illustrative sketch for ADR 0001 — adjust
+# image names, resources, and probes for your app. It is NOT applied by this
+# repo's CI (homectl-auth's own k8s/ manifests are unaffected).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workbench
+  namespace: homectl
+spec:
+  replicas: 3 # multi-pod: stateless sidecar + shared COOKIE_KEY, no Redis needed
+  selector:
+    matchLabels:
+      app: workbench
+  template:
+    metadata:
+      labels:
+        app: workbench
+    spec:
+      containers:
+        # ── App container ─────────────────────────────────────────────────────
+        # Listens on loopback only where possible; it should trust the sidecar's
+        # injected X-Homectl-* / Authorization headers and never be exposed to
+        # the ingress directly.
+        - name: app
+          image: registry.example.com/workbench:latest
+          ports:
+            - name: http
+              containerPort: 3000
+
+        # ── Auth sidecar ──────────────────────────────────────────────────────
+        - name: auth-proxy
+          image: registry.example.com/homectl-auth-proxy:latest
+          ports:
+            - name: proxy
+              containerPort: 4180
+          env:
+            - name: PUBLIC_AUTH_URL
+              value: https://auth.homectl.no
+            - name: INTERNAL_AUTH_URL
+              value: http://homectl-auth.homectl # ClusterIP Service, in-cluster
+            - name: APP_BASE_URL
+              value: https://workbench.homectl.no
+            - name: UPSTREAM
+              value: http://127.0.0.1:3000
+            - name: AUTH_CLIENT_ID
+              value: workbench
+            - name: AUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: workbench-auth
+                  key: AUTH_CLIENT_SECRET # plaintext secret; auth stores its bcrypt hash
+            - name: COOKIE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: workbench-auth
+                  key: COOKIE_KEY # 32-byte base64; SAME value across all replicas
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 4180
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 4180
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workbench
+  namespace: homectl
+spec:
+  selector:
+    app: workbench
+  ports:
+    - name: http
+      port: 80
+      targetPort: 4180 # → the sidecar, not the app
+---
+# Defense-in-depth: keep /internal/* on homectl-auth reachable only from inside
+# the cluster. Client-secret auth already guards it, but this removes it from the
+# public ingress surface entirely. (Illustrative — align with your ingress.)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: workbench
+  namespace: homectl
+  annotations:
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location ~ ^/internal/ { return 404; }
+spec:
+  rules:
+    - host: workbench.homectl.no
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: workbench
+                port:
+                  number: 80

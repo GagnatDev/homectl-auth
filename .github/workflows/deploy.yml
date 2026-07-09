@@ -40,6 +40,32 @@ jobs:
           docker push rg.fr-par.scw.cloud/homectl/homectl-auth:${{ env.IMAGE_TAG }}
           docker push rg.fr-par.scw.cloud/homectl/homectl-auth:latest
 
+  # Build and push the forward-auth sidecar image. This job ONLY builds and
+  # pushes — it never `kubectl apply`s, because the proxy runs as a sidecar in
+  # each *consuming app's* pod (in that app's own manifests), not in this repo's
+  # homectl-namespace deployment. Independent of the auth-service build/deploy.
+  build-proxy:
+    name: Build → Push (proxy sidecar)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.IMAGE_TAG }}
+
+      - name: Build and push proxy image
+        run: |
+          echo "${{ secrets.SCW_SECRET_KEY }}" | docker login rg.fr-par.scw.cloud \
+            -u nologin --password-stdin
+          docker build -f Dockerfile.proxy \
+                       -t rg.fr-par.scw.cloud/homectl/homectl-auth-proxy:${{ env.IMAGE_TAG }} \
+                       -t rg.fr-par.scw.cloud/homectl/homectl-auth-proxy:latest .
+          docker push rg.fr-par.scw.cloud/homectl/homectl-auth-proxy:${{ env.IMAGE_TAG }}
+          docker push rg.fr-par.scw.cloud/homectl/homectl-auth-proxy:latest
+
   deploy:
     name: Deploy
     needs: build

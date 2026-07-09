@@ -8,7 +8,9 @@
  *   - homectl_refresh_<clientId>  per-app refresh token
  *   - homectl_sso                 single-sign-on (records authenticated user ID)
  *
- * Both cookies are HttpOnly; Secure; SameSite=Strict; path=/; domain=auth.homectl.no
+ * Refresh cookies: HttpOnly; Secure; SameSite=Strict; path=/; domain=.homectl.no
+ * (parent domain so app subdomains like workbench.homectl.no receive them).
+ * SSO cookie: same flags but host-only on auth.homectl.no.
  */
 
 import { randomBytes, createHash } from 'crypto';
@@ -17,6 +19,14 @@ import { type Response } from 'express';
 
 const REFRESH_TTL_DAYS = 30;
 const SSO_TTL_DAYS = 30;
+
+/** Parent domain for per-app refresh cookies (override via REFRESH_COOKIE_DOMAIN). */
+export function getRefreshCookieDomain(): string | undefined {
+  return (
+    process.env['REFRESH_COOKIE_DOMAIN'] ??
+    (process.env['NODE_ENV'] === 'production' ? '.homectl.no' : undefined)
+  );
+}
 
 function hashToken(raw: string): string {
   return createHash('sha256').update(raw).digest('hex');
@@ -28,13 +38,29 @@ function refreshCookieName(clientId: string): string {
 
 export const SSO_COOKIE_NAME = 'homectl_sso';
 
-function cookieOptions(ttlDays: number) {
+function baseCookieOptions(ttlDays: number) {
   return {
     httpOnly: true,
     secure: process.env['NODE_ENV'] === 'production',
     sameSite: 'strict' as const,
     path: '/',
     maxAge: ttlDays * 24 * 60 * 60 * 1000,
+  };
+}
+
+function refreshCookieOptions(ttlDays: number) {
+  const domain = getRefreshCookieDomain();
+  return {
+    ...baseCookieOptions(ttlDays),
+    ...(domain ? { domain } : {}),
+  };
+}
+
+export function refreshCookieClearOptions() {
+  const domain = getRefreshCookieDomain();
+  return {
+    path: '/',
+    ...(domain ? { domain } : {}),
   };
 }
 
@@ -144,15 +170,15 @@ export async function deleteAllSessionsForUser(userId: string): Promise<void> {
 // ── Cookie helpers ─────────────────────────────────────────────────────────
 
 export function setRefreshCookie(res: Response, clientId: string, rawToken: string): void {
-  res.cookie(refreshCookieName(clientId), rawToken, cookieOptions(REFRESH_TTL_DAYS));
+  res.cookie(refreshCookieName(clientId), rawToken, refreshCookieOptions(REFRESH_TTL_DAYS));
 }
 
 export function clearRefreshCookie(res: Response, clientId: string): void {
-  res.clearCookie(refreshCookieName(clientId), { path: '/' });
+  res.clearCookie(refreshCookieName(clientId), refreshCookieClearOptions());
 }
 
 export function setSsoCookie(res: Response, userId: string): void {
-  res.cookie(SSO_COOKIE_NAME, userId, cookieOptions(SSO_TTL_DAYS));
+  res.cookie(SSO_COOKIE_NAME, userId, baseCookieOptions(SSO_TTL_DAYS));
 }
 
 export function getRefreshTokenFromCookie(

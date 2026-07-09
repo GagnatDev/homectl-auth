@@ -69,7 +69,7 @@ The central service deployed at `auth.homectl.no`. Composed of the following int
 - Issues opaque refresh tokens (32 random bytes, hex-encoded)
 - Stores SHA256 hash of refresh token in Postgres (never the raw token)
 - Refresh token TTL: 30 days, enforced by `expires_at` column
-- **Per-app refresh cookies.** Cookie name is `homectl_refresh_<clientId>` so multiple apps can coexist in the same browser without colliding. Each cookie is `HttpOnly; Secure; SameSite=Strict`, path `/`, domain `auth.homectl.no`. Each session row in Postgres records the `client_id` it was issued for; the access token's `aud` is taken from that `client_id`.
+- **Per-app refresh cookies.** Cookie name is `homectl_refresh_<clientId>` so multiple apps can coexist in the same browser without colliding. Each cookie is `HttpOnly; Secure; SameSite=Strict`, path `/`, domain `.homectl.no` (parent domain so app subdomains like `workbench.homectl.no` receive it for same-origin backend proxies). Each session row in Postgres records the `client_id` it was issued for; the access token's `aud` is taken from that `client_id`.
 - **Single sign-on across apps** is handled by a separate `homectl_sso` cookie (also `HttpOnly; Secure; SameSite=Strict`, 30-day TTL, domain `auth.homectl.no`) that records the authenticated user ID. When `/authorize?client_id=appN` is hit and the `homectl_sso` cookie is valid, the auth service skips the login form, verifies the user has access to `appN`, mints a new authorization code, and creates a new app-scoped session — no password re-entry required.
 - On refresh (`POST /refresh` from app's browser): the auth service reads the per-app cookie matching the `Origin` header (CORS-validated), rotates the refresh token (new issued, old invalidated atomically), returns a new access token with `aud = client_id`.
 - On logout (`POST /logout` from app's browser): deletes only the session row for the calling app and clears that app's refresh cookie. Other apps' sessions and the `homectl_sso` cookie are preserved — visiting another app or revisiting this app re-bootstraps without re-login until the SSO cookie expires.
@@ -185,8 +185,9 @@ A small package with two entry points — a server-side Express integration and 
 **Server-side entry point: `@gagnatdev/homectl-auth-client/server`**
 
 - `createAuthClient(options)` — factory. Required options:
-  - `authServiceUrl` — e.g. `https://auth.homectl.no`
-  - `jwksUrl` — derived by default as `${authServiceUrl}/.well-known/jwks.json`
+  - `authServiceUrl` — the public URL, e.g. `https://auth.homectl.no`; used for browser-facing redirects and as the expected JWT `iss` claim
+  - `internalAuthServiceUrl` — optional; base URL for server-to-server calls (token exchange and the default JWKS URL). Set to an in-cluster service-discovery address (e.g. `http://homectl-auth.homectl.svc.cluster.local`) to keep backend traffic off the public ingress. Defaults to `authServiceUrl`. Never used for browser redirects or issuer verification.
+  - `jwksUrl` — derived by default as `${internalAuthServiceUrl ?? authServiceUrl}/.well-known/jwks.json`
   - `clientId` — the app's registered identifier (e.g. `"travel-journal"`)
   - `clientSecret` — read from env in the consuming app; sent on token exchange
   - `appBaseUrl` — the public-facing URL of the consuming app (e.g. `https://reisedagbok.homectl.no`); used to construct `redirect_uri` reliably without depending on `req.hostname`
@@ -200,7 +201,7 @@ A small package with two entry points — a server-side Express integration and 
   - Populates `req.user = { id, email, isAdmin, role }` (role is the role for this app)
   - On unauthenticated browser requests (HTML accept header): generates a random `state` nonce, stores it in a short-lived signed cookie on the app's domain, redirects to `${authServiceUrl}/authorize?response_type=code&client_id=${clientId}&redirect_uri=${appBaseUrl}${callbackPath}&state=${nonce}`
   - On unauthenticated API requests: returns 401 (browser-side helper will refresh and retry)
-- `callbackHandler` — Express route handler for `callbackPath`. Reads `code` and `state` from query; verifies `state` matches the cookie value, deletes the cookie; POSTs to `${authServiceUrl}/token` with `{ grant_type, code, client_id, client_secret, redirect_uri }`; on success, redirects the browser back to the originally requested URL (stored in the state cookie payload) or to `appBaseUrl/`. The exchanged access token is discarded — the refresh cookie is now set on `auth.homectl.no`, and the browser will bootstrap an access token via `/refresh` on first page load.
+- `callbackHandler` — Express route handler for `callbackPath`. Reads `code` and `state` from query; verifies `state` matches the cookie value, deletes the cookie; POSTs to `${internalAuthServiceUrl ?? authServiceUrl}/token` with `{ grant_type, code, client_id, client_secret, redirect_uri }`; on success, redirects the browser back to the originally requested URL (stored in the state cookie payload) or to `appBaseUrl/`. The exchanged access token is discarded — the refresh cookie is now set on `auth.homectl.no`, and the browser will bootstrap an access token via `/refresh` on first page load.
 - `logoutHandler` — Express route handler for `/auth/logout`. Renders a page that calls `${authServiceUrl}/logout` from the browser (cookies included), then redirects to `appBaseUrl/`.
 - JWKS fetching: uses `jwks-rsa`; caches public keys in memory; re-fetches on unknown `kid` (zero-downtime key rotation).
 

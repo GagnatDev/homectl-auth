@@ -11,6 +11,7 @@ Issues RS256-signed JWTs to all apps on the domain. Users have one account and o
 | `packages/server` | The auth service — Express + TypeScript + Postgres |
 | `packages/web` | The GUI — a React + TypeScript + Tailwind (shadcn/ui) SPA, built with Vite and served by the server |
 | `packages/client` | `@gagnatdev/homectl-auth-client` — integration library for consuming apps |
+| `packages/proxy` | `homectl-auth-proxy` — forward-auth sidecar; a deployable Docker image (not published to npm) that runs beside a consuming app. See [docs/sidecar/integration.md](docs/sidecar/integration.md) |
 
 ## Quick Start (local dev)
 
@@ -117,7 +118,7 @@ PostgreSQL
 2. App server: no token → redirect to auth.homectl.no/authorize?client_id=...&state=nonce
 3. User submits credentials at auth.homectl.no/login
 4. Auth service: validates credentials, verifies app access
-5. Sets homectl_refresh_<clientId> cookie (HttpOnly, SameSite=Strict, domain=auth.homectl.no)
+5. Sets homectl_refresh_<clientId> cookie (HttpOnly, SameSite=Strict, domain=.homectl.no)
 6. Sets homectl_sso cookie (for SSO on subsequent apps)
 7. Redirects to redirect_uri?code=...&state=nonce
 8. App server: exchanges code for access token (server-to-server POST /token)
@@ -191,6 +192,25 @@ The `publish` workflow triggers on the tag, builds the package, and publishes it
 ---
 
 ## Integrating a New App
+
+There are two supported integration styles. Both are first-class; pick one.
+
+- **Forward-auth sidecar (recommended).** Add the `homectl-auth-proxy` container
+  to your pod and point ingress at it. Your **frontend holds no token and makes
+  only same-origin requests**, and your **backend reads a verified identity
+  header** — no auth code in either. Refresh and token exchange stay in-cluster.
+  This is the path that avoids the login-loop and `Origin` footguns described in
+  the [PRD](docs/prd-sidecar-proxy.md). Full walkthrough:
+  **[docs/sidecar/integration.md](docs/sidecar/integration.md)** (migrating an
+  existing app: [docs/sidecar/migration.md](docs/sidecar/migration.md);
+  troubleshooting: [docs/sidecar/troubleshooting.md](docs/sidecar/troubleshooting.md)).
+
+- **Client library (`@gagnatdev/homectl-auth-client`).** Wire auth into your
+  Node/Express app and SPA directly, as described below. Still fully supported.
+
+The steps below cover the **client library** path. The sidecar reuses steps 1–2
+(app registration + client secret) and then replaces steps 3–5 entirely — see
+its guide.
 
 ### 1. Register the app
 
@@ -268,10 +288,64 @@ const { authMiddleware, callbackHandler, logoutHandler } = createAuthClient({
   appBaseUrl: 'https://my-app.homectl.no',
 });
 
-app.use(authMiddleware);           // populates req.user on valid JWT
+// Gate your API/XHR routes only — these carry `Authorization: Bearer <token>`
+// via the browser helper's authedFetch and populate req.user on a valid JWT.
+app.use('/api', authMiddleware);
+
 app.get('/auth/callback', callbackHandler);
 app.post('/auth/logout', logoutHandler);
+
+// Serve your SPA / HTML shell WITHOUT authMiddleware. The page loads
+// unauthenticated; the browser helper's bootstrap() then fetches the access
+// token from the refresh cookie and decides whether to render the app or send
+// the user to login.
+app.get('*', serveSpaShell);
 ```
+
+> ⚠️ **Never put `authMiddleware` in front of routes that return HTML** — and
+> avoid a blanket `app.use(authMiddleware)` if the same app also serves your
+> SPA. Top-level browser navigations never carry a `Bearer` header (the access
+> token lives in JS memory and is only fetched by `bootstrap()` *after* the
+> shell loads), so gating HTML on the bearer sends every page load to
+> `/authorize` and loops straight back to the login screen. Gate `/api`
+> (bearer) and serve the shell unauthenticated; let `bootstrap()` make the
+> login decision.
+>
+> As a safety net, `authMiddleware` will **not** redirect an HTML request to
+> `/authorize` when this app's refresh cookie is present (i.e. a live session) —
+> it lets the request through so the SPA can bootstrap. It only redirects on a
+> genuine first visit with no session cookie. Gating only `/api` is still the
+> correct wiring.
+
+**In-cluster service discovery (optional).** Apps running in the same Kubernetes
+cluster can route the server-to-server calls (token exchange and JWKS fetch)
+through the `homectl-auth` ClusterIP Service instead of the public ingress by
+setting `internalAuthServiceUrl`:
+
+```typescript
+const { authMiddleware, callbackHandler, logoutHandler } = createAuthClient({
+  authServiceUrl: 'https://auth.homectl.no',
+  internalAuthServiceUrl: 'http://homectl-auth.homectl.svc.cluster.local',
+  clientId: 'my-app',
+  clientSecret: process.env.MY_APP_CLIENT_SECRET!,
+  appBaseUrl: 'https://my-app.homectl.no',
+});
+```
+
+`authServiceUrl` stays the public URL — it is what the user's browser is
+redirected to (`/authorize`, `/logout`) and what the JWT `iss` claim is
+verified against, so it must always match the issuer the auth service signs
+tokens with. Apps in the `homectl` namespace can shorten the internal URL to
+`http://homectl-auth`.
+
+**Sidecar / backend-mediated auth (forward-auth).** For apps that want the
+frontend to be entirely auth-agnostic and to keep browser↔auth traffic off the
+public ingress, homectl-auth exposes a server-to-server refresh endpoint —
+`POST /internal/refresh` (`{ client_id, client_secret, refresh_token }` →
+access token + rotated refresh token in the body). It is the machine analogue of
+`POST /refresh` (no `Origin`, no cookies) and is meant to be called in-cluster.
+See [ADR 0001](docs/adr/0001-forward-auth-sidecar.md) and the sidecar sketch in
+[`docs/sidecar/`](docs/sidecar/README.md).
 
 ### 5. Browser helper
 
@@ -296,9 +370,11 @@ CI/CD (`push` to `main`) handles everything: build and push the image, substitut
 
 ### First-time bootstrap
 
-The deployment uses two Kubernetes Secrets:
+The deployment uses three Kubernetes Secrets:
 
 **`auth-terraform-secrets`** — created automatically by `terraform apply` in `homectl-infra`. Contains `DATABASE_URL` pointing at the dedicated `auth` database user. No manual step needed.
+
+**`auth-client-secrets`** — created automatically by `terraform apply` in `homectl-infra`, generated from the registered apps and config. Holds the bcrypt hash of each app's client secret, one entry per registered app; each key matches the app's `clientSecretEnv` in `apps.json` (e.g. `WORKBENCH_CLIENT_SECRET`) and is consumed via `envFrom`. No manual step needed.
 
 **`auth-secrets`** — hand-managed. Create once with your own values:
 
@@ -309,9 +385,7 @@ kubectl create secret generic auth-secrets \
   --from-literal=RS256_PUBLIC_KEY_PEM="$(base64 -w0 < public_key.pem)" \
   --from-literal=GITHUB_ADMIN_CLIENT_ID='...' \
   --from-literal=GITHUB_ADMIN_CLIENT_SECRET='...' \
-  --from-literal=GITHUB_ADMIN_USER_IDS='...' \
-  --from-literal=TRAVEL_JOURNAL_CLIENT_SECRET='$2b$12$...' \
-  --from-literal=WORKBENCH_CLIENT_SECRET='$2b$12$...'
+  --from-literal=GITHUB_ADMIN_USER_IDS='...'
 ```
 
 Once the secret is created, store `private_key.pem` in a secure offline location (password manager or encrypted vault) and delete it from disk. You only need it again if you rotate the key pair. `public_key.pem` is less sensitive — consuming apps should fetch the public key dynamically via `/.well-known/jwks.json` rather than storing it.
@@ -335,7 +409,7 @@ This transfers ownership of all tables, sequences, and other objects in a single
 | `auth-terraform-secrets` | `DATABASE_URL` | PostgreSQL connection string — managed by Terraform |
 | `auth-secrets` | `RS256_PRIVATE_KEY_PEM` | Base64-encoded RS256 private key PEM (PKCS#8) — used to sign JWTs |
 | `auth-secrets` | `RS256_PUBLIC_KEY_PEM` | Base64-encoded RS256 public key PEM (SPKI) — used to derive JWKS `kid` and serve `/.well-known/jwks.json` |
-| `auth-secrets` | `<APP>_CLIENT_SECRET` | bcrypt hash of each app's client secret |
+| `auth-client-secrets` | `<APP>_CLIENT_SECRET` | bcrypt hash of each app's client secret — managed by Terraform |
 
 ### Required GitHub Actions secrets
 

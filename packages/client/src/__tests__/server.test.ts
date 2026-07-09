@@ -163,6 +163,30 @@ describe('authMiddleware', () => {
     expect(res.headers['location']).toContain(`client_id=${CLIENT_ID}`);
   });
 
+  it('serves the HTML page instead of looping when a refresh cookie is present', async () => {
+    // A logged-in browser navigating to a page carries the per-app refresh
+    // cookie but no Bearer header (the access token lives in JS memory). The
+    // guardrail must let the request through so the SPA can bootstrap — NOT
+    // redirect to /authorize, which would loop back to the login screen.
+    const res = await request(app)
+      .get('/protected')
+      .set('Accept', 'text/html')
+      .set('Cookie', `homectl_refresh_${CLIENT_ID}=some-opaque-refresh-token`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Hello');
+  });
+
+  it('still redirects HTML requests to /authorize when only another app\'s refresh cookie is present', async () => {
+    const res = await request(app)
+      .get('/protected')
+      .set('Accept', 'text/html')
+      .set('Cookie', 'homectl_refresh_other-app=not-ours');
+
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toContain(`${AUTH_SERVICE_URL}/authorize`);
+  });
+
   it('sets a state cookie on browser redirect', async () => {
     const res = await request(app)
       .get('/protected')
@@ -267,5 +291,76 @@ describe('logoutHandler', () => {
     expect(res.type).toContain('html');
     expect(res.text).toContain(AUTH_SERVICE_URL);
     expect(res.text).toContain('/logout');
+  });
+});
+
+// ── internalAuthServiceUrl ─────────────────────────────────────────────────
+
+describe('internalAuthServiceUrl', () => {
+  const INTERNAL_URL = 'http://homectl-auth.homectl.svc.cluster.local';
+  let internalApp: ReturnType<typeof express>;
+
+  function makeStateCookie(nonce: string, originalUrl = '/dashboard') {
+    const payload = JSON.stringify({ nonce, originalUrl });
+    const b64 = Buffer.from(payload).toString('base64');
+    const sig = createHmac('sha256', CLIENT_SECRET).update(b64).digest('hex');
+    return `${b64}.${sig}`;
+  }
+
+  beforeAll(() => {
+    // No _jwksProvider here — these tests never verify a JWT, and constructing
+    // the client exercises the real jwksUrl derivation from the internal URL.
+    internalApp = express();
+    internalApp.use(cookieParser());
+    internalApp.use(express.json());
+
+    const { authMiddleware, callbackHandler, logoutHandler } = createAuthClient({
+      authServiceUrl: AUTH_SERVICE_URL,
+      internalAuthServiceUrl: INTERNAL_URL,
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      appBaseUrl: APP_BASE_URL,
+      callbackPath: CALLBACK_PATH,
+    });
+
+    internalApp.get('/protected', authMiddleware, (_req, res) => {
+      res.send('<html></html>');
+    });
+    internalApp.get(CALLBACK_PATH, callbackHandler);
+    internalApp.post('/auth/logout', logoutHandler);
+  });
+
+  it('exchanges the code against the internal URL', async () => {
+    mockFetch.mockClear();
+    const nonce = 'internal-nonce';
+    const cookie = makeStateCookie(nonce);
+
+    const res = await request(internalApp)
+      .get(CALLBACK_PATH)
+      .set('Cookie', `homectl_auth_state=${cookie}`)
+      .query({ code: 'validcode', state: nonce });
+
+    expect(res.status).toBe(302);
+    const tokenCall = mockFetch.mock.calls.find(
+      ([url]) => typeof url === 'string' && url.endsWith('/token'),
+    );
+    expect(tokenCall?.[0]).toBe(`${INTERNAL_URL}/token`);
+  });
+
+  it('still redirects unauthenticated browsers to the public /authorize URL', async () => {
+    const res = await request(internalApp)
+      .get('/protected')
+      .set('Accept', 'text/html');
+
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toContain(`${AUTH_SERVICE_URL}/authorize`);
+    expect(res.headers['location']).not.toContain(INTERNAL_URL);
+  });
+
+  it('logout page still targets the public URL', async () => {
+    const res = await request(internalApp).post('/auth/logout');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain(`${AUTH_SERVICE_URL}/logout`);
+    expect(res.text).not.toContain(INTERNAL_URL);
   });
 });

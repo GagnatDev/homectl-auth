@@ -46,6 +46,9 @@ jobs:
       - name: Test (client — no DB needed)
         run: pnpm --filter @gagnatdev/homectl-auth-client test
 
+      - name: Test (proxy — no DB needed)
+        run: pnpm --filter @homectl/proxy test
+
       - name: Test (server — uses @testcontainers/postgresql)
         run: pnpm --filter @homectl/server test
         env:
