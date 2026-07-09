@@ -43,14 +43,28 @@ The frontend is auth-agnostic and refresh traffic leaves the public ingress.
 ### 1. Register / reuse the client secret
 
 Your app is already registered in `apps.json` with a `clientSecretEnv`. You need
-the **plaintext** client secret for the sidecar's `AUTH_CLIENT_SECRET`. If you
-still have it, reuse it. If not, regenerate: create a new plaintext secret,
-store its bcrypt hash under the existing `clientSecretEnv` in homectl-auth, and
-put the plaintext in the app's Secret (see integration.md §2). Confirm
-`allowedRedirectUris` contains `${APP_BASE_URL}/auth/callback`.
+the **plaintext** client secret for the sidecar's `AUTH_CLIENT_SECRET`, plus a
+`COOKIE_KEY` for the sidecar's session cookie — neither of which the library
+integration needed.
 
-Generate `COOKIE_KEY` (`openssl rand -base64 32`) and add both `COOKIE_KEY` and
-`AUTH_CLIENT_SECRET` to the app's Secret.
+- **If your app is provisioned by `homectl-infra`'s Terraform:** set `auth = true`
+  on it (if not already) and run `terraform apply`. This generates
+  `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`, and `COOKIE_KEY` in the app's
+  `<app>-terraform-secrets` Secret and mirrors the same plaintext
+  `AUTH_CLIENT_SECRET` into homectl-auth's `auth-client-secrets` Secret under
+  the existing `clientSecretEnv` key — reference that Secret directly in the
+  sidecar's `env` (integration.md §3); nothing to generate by hand. See
+  homectl-infra's
+  [deploying-an-app.md → Auth sidecar](https://github.com/GagnatDev/homectl-infra/blob/main/docs/deploying-an-app.md#auth-sidecar-auth--true).
+- **Otherwise:** reuse the existing plaintext secret if you still have it, or
+  regenerate one and store the identical plaintext value under both the app's
+  own Secret (`AUTH_CLIENT_SECRET`) and homectl-auth's `auth-client-secrets`
+  Secret (the existing `clientSecretEnv` key) — see integration.md §2. There is
+  no hashing step; homectl-auth compares the two values directly. Generate
+  `COOKIE_KEY` yourself (`openssl rand -base64 32`) and add it alongside
+  `AUTH_CLIENT_SECRET` in the app's Secret.
+
+Either way, confirm `allowedRedirectUris` contains `${APP_BASE_URL}/auth/callback`.
 
 ### 2. Add the sidecar container
 

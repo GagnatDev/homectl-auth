@@ -54,8 +54,8 @@ Per request the sidecar:
 
 The sidecar is a normal homectl-auth OAuth client, so registration is exactly
 the same as for a library app — see the main README's
-[**Integrating a New App → Register the app**](../../README.md#integrating-a-new-app)
-and **Generate and store the client secret**. In short:
+[**Integrating a New App → Register the app**](../../README.md#integrating-a-new-app).
+In short:
 
 Add an entry to `apps.json`:
 
@@ -80,20 +80,44 @@ Add an entry to `apps.json`:
 - `allowedOrigins` should include your app's public origin. The sidecar does not
   use the `Origin`-based `/refresh` path, but keeping the origin listed avoids
   surprises and matches the library apps.
+- `clientSecretEnv` must equal `<APP>_CLIENT_SECRET` (uppercase, `-`→`_`) — e.g.
+  `workbench` → `WORKBENCH_CLIENT_SECRET`.
 
-Generate the client secret and store **both** halves:
+**Getting the client secret is now automatic.** If your app is provisioned by
+`homectl-infra`'s Terraform (set `auth = true` on it in the `applications`
+variable), `terraform apply` generates the secret **once** and writes the
+*same plaintext value* to both sides — no manual generation, no hashing:
+
+- the app's own `<app>-terraform-secrets` Secret gets `AUTH_CLIENT_ID` (= the
+  app name), `AUTH_CLIENT_SECRET`, and `COOKIE_KEY` — exactly the three values
+  the sidecar needs (see §3 below);
+- homectl-auth's shared `auth-client-secrets` Secret gets the matching
+  `<APP>_CLIENT_SECRET` entry, which is what `clientSecretEnv` above points at.
+
+See homectl-infra's
+[deploying-an-app.md → Auth sidecar](https://github.com/GagnatDev/homectl-infra/blob/main/docs/deploying-an-app.md#auth-sidecar-auth--true)
+for the full contract, including the ordering requirement (`terraform apply`
+before rolling out an `apps.json` that references the new `clientSecretEnv`)
+and the required `rollout restart deploy/auth` after keys change (Secret-backed
+env vars do not hot-reload).
+
+homectl-auth compares the client secret it receives directly (constant-time)
+against the plaintext value in `clientSecretEnv` — there is no bcrypt hash
+involved on either side.
+
+If your app is **not** provisioned by that Terraform, generate and wire the
+secret by hand instead: pick any random value and store the identical
+plaintext string as both `AUTH_CLIENT_SECRET` in the app's own Secret and
+`<APP>_CLIENT_SECRET` in homectl-auth's `auth-client-secrets` Secret:
 
 ```bash
 SECRET=$(openssl rand -hex 32)
-echo "plaintext (goes in the app's Secret): $SECRET"
-node -e "require('bcryptjs').hash('$SECRET', 12).then(console.log)"   # hash → homectl-auth's Secret
+kubectl -n homectl create secret generic workbench-auth \
+  --from-literal=AUTH_CLIENT_SECRET="$SECRET"
+kubectl -n homectl patch secret auth-client-secrets \
+  --type=json -p "[{\"op\":\"add\",\"path\":\"/data/WORKBENCH_CLIENT_SECRET\",\"value\":\"$(echo -n "$SECRET" | base64 -w0)\"}]"
+kubectl -n homectl rollout restart deploy/auth   # Secret-backed env vars don't hot-reload
 ```
-
-- homectl-auth stores the **bcrypt hash** under `clientSecretEnv`
-  (`WORKBENCH_CLIENT_SECRET`) in the `homectl` namespace, exactly as today.
-- The sidecar stores the **plaintext** secret as `AUTH_CLIENT_SECRET` in the
-  app's own Secret (below). It presents it to `/token` and `/internal/refresh`,
-  which bcrypt-compare it against the stored hash.
 
 ---
 
@@ -103,8 +127,16 @@ A complete, production-shaped manifest. Substitute the five clearly marked
 values; everything else is copy-paste. (A minimal sketch lives in
 [`deployment.example.yaml`](./deployment.example.yaml).)
 
+If `auth = true` is set for this app in `homectl-infra`'s Terraform, the
+Secret below (`<app>-terraform-secrets`, holding `AUTH_CLIENT_ID`,
+`AUTH_CLIENT_SECRET`, and `COOKIE_KEY`) is created for you — skip straight to
+wiring the Deployment's `env` to it. The `stringData` block is only needed if
+you are wiring the secret by hand (see §2).
+
 ```yaml
 # ── Secret: the two values the sidecar needs ──────────────────────────────────
+# (Terraform-managed as <app>-terraform-secrets when `auth = true` — see §2.
+# This hand-written form is only for apps outside that automation.)
 apiVersion: v1
 kind: Secret
 metadata:
@@ -112,7 +144,8 @@ metadata:
   namespace: homectl
 type: Opaque
 stringData:
-  # Plaintext client secret (homectl-auth stores the bcrypt hash of this).
+  # Plaintext client secret — homectl-auth's auth-client-secrets Secret must
+  # hold this exact same value under WORKBENCH_CLIENT_SECRET (no hashing).
   AUTH_CLIENT_SECRET: "REPLACE_WITH_PLAINTEXT_SECRET"        # ← substitute
   # 32-byte base64 key for cookie encryption. Generate: openssl rand -base64 32
   # MUST be identical across every replica (it is one Secret, so it is).

@@ -110,7 +110,7 @@ The central service deployed at `auth.homectl.no`. Composed of the following int
     ]
   }
   ```
-- `clientSecretEnv` names an environment variable holding the bcrypt-hashed client secret (the hash is committed to the cluster as a Kubernetes Secret; the raw secret is only known to the consuming app and is distributed once via secure channel during app onboarding)
+- `clientSecretEnv` names an environment variable holding the app's plaintext client secret, committed to the cluster as a Kubernetes Secret (`auth-client-secrets`); for apps provisioned by `homectl-infra`'s Terraform this is generated automatically and mirrored to the consuming app's own secret, with no manual distribution step
 - `allowedOrigins` is the CORS allow-list for that app's browser-side calls to `/refresh` and `/logout`
 - Role ranks are app-defined integers; the auth service treats them as opaque ordinals — no domain meaning is assumed
 - Designed so app definitions can later be moved to a DB table without changing the access module's interface

@@ -92,8 +92,8 @@ Content-Type: application/json
 }
 ```
 
-- **Auth:** `client_id` + `client_secret`, bcrypt-compared against the app's
-  configured hash — identical trust to the `/token` exchange
+- **Auth:** `client_id` + `client_secret`, constant-time-compared against the
+  app's configured plaintext secret — identical trust to the `/token` exchange
   (`verifyClientSecret`, `packages/server/src/modules/client/client.service.ts`).
 - **Rotation:** reuses `rotateSession` — the presented token is invalidated and
   a new one issued. The rotated token is returned **in the JSON body**, never as

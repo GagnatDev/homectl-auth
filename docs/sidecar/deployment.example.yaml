@@ -51,7 +51,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: workbench-auth
-                  key: AUTH_CLIENT_SECRET # plaintext secret; auth stores its bcrypt hash
+                  key: AUTH_CLIENT_SECRET # plaintext secret; auth compares it directly (no hashing)
             - name: COOKIE_KEY
               valueFrom:
                 secretKeyRef:

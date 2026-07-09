@@ -59,7 +59,7 @@ This model has proven error-prone and costly in three concrete ways:
 
 - **`POST /internal/refresh`** (`packages/server/src/routes/internal.router.ts`)
   — the server-to-server counterpart of `POST /refresh`. It authenticates with
-  `client_id` + `client_secret` (bcrypt, same trust as `/token`), rotates the
+  `client_id` + `client_secret` (constant-time compare, same trust as `/token`), rotates the
   refresh token, and returns the access token **and the rotated refresh token
   in the JSON body** (no `Origin`, no `Set-Cookie`). This is the building block
   the sidecar refreshes against. **Already merged.**

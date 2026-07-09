@@ -2,7 +2,6 @@
  * Test helpers: inject app config + create test users with known secrets.
  */
 
-import bcrypt from 'bcryptjs';
 import { setAppsConfig, type AppConfig } from '../../config/apps';
 import { createUser, type User } from '../../modules/user/user.repository';
 import { hashPassword } from '../../modules/user/password.service';
@@ -29,9 +28,7 @@ export const TEST_APP: AppConfig = {
 };
 
 export async function setupTestAppConfig(): Promise<void> {
-  // Hash the test client secret and inject it via env var
-  const hash = await bcrypt.hash(TEST_CLIENT_SECRET, 10); // cost 10 for speed in tests
-  process.env[TEST_CLIENT_SECRET_ENV] = hash;
+  process.env[TEST_CLIENT_SECRET_ENV] = TEST_CLIENT_SECRET;
   setAppsConfig([TEST_APP]);
 }
 

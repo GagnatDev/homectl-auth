@@ -17,7 +17,7 @@ export type AppRole = {
 export type AppConfig = {
   id: string;
   name: string;
-  /** Name of the env var holding the bcrypt-hashed client secret */
+  /** Name of the env var holding the app's plaintext client secret */
   clientSecretEnv: string;
   allowedRedirectUris: string[];
   /** Origins allowed to call /refresh and /logout with credentials */
@@ -72,15 +72,15 @@ export function validateRedirectUri(app: AppConfig, redirectUri: string): boolea
 }
 
 /**
- * Get the bcrypt-hashed client secret for an app from the environment variable
+ * Get the plaintext client secret for an app from the environment variable
  * named in clientSecretEnv.
  */
-export function getClientSecretHash(app: AppConfig): string {
-  const hash = process.env[app.clientSecretEnv];
-  if (!hash) {
+export function getClientSecret(app: AppConfig): string {
+  const secret = process.env[app.clientSecretEnv];
+  if (!secret) {
     throw new Error(`Environment variable ${app.clientSecretEnv} is not set for app ${app.id}`);
   }
-  return hash;
+  return secret;
 }
 
 /**
