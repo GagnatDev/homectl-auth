@@ -307,10 +307,15 @@ missing/invalid vars (follow the repo's existing env-validation approach).
   and any `X-Homectl-*` headers before injecting its own. Document loudly that
   the app must be reachable **only** through the sidecar (never expose the app
   container to the ingress directly).
-- **`/internal/refresh` exposure.** It is client-secret-authenticated, so public
-  reachability is no worse than `/token`; still, recommend restricting `/internal/*`
-  to in-cluster traffic via NetworkPolicy and/or an ingress path exclusion
-  (defense in depth). Provide the manifest snippet in docs.
+- **`/internal/refresh` is an in-cluster, machine-to-machine endpoint.** The
+  sidecar calls it over `INTERNAL_AUTH_URL` (ClusterIP), authenticating with
+  `client_id` + `client_secret` (constant-time compare — same trust as `/token`),
+  never via browser `Origin` or cookies. That client-secret check is the security
+  boundary. An app-ingress path exclusion is neither needed nor helpful: a request
+  to `<app-host>/internal/*` is proxied to the app's own upstream, never to
+  homectl-auth. If in-cluster-only reachability is wanted at the network layer as
+  defense in depth, enforce it at homectl-auth (e.g. a NetworkPolicy on its
+  Service), not per app ingress.
 - **CSRF on callback.** Verify the signed, single-use `state` cookie on
   callback; reject on mismatch.
 - **Cookie flags.** Session cookie: `HttpOnly`, `Secure`, `SameSite=Lax`
