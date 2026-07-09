@@ -35,7 +35,7 @@ internalRouter.post('/internal/refresh', async (req, res) => {
     return;
   }
 
-  // Authenticate the calling app (bcrypt compare — same as /token exchange).
+  // Authenticate the calling app (constant-time compare — same as /token exchange).
   const clientOk = await verifyClientSecret(client_id, client_secret);
   if (!clientOk) {
     res.status(401).json({ error: 'invalid_client' });

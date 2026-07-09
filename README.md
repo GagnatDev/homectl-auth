@@ -232,21 +232,33 @@ Add an entry to `apps.json` (see `apps.example.json`):
 
 ### 2. Generate and store the client secret
 
+**If your app is provisioned by `homectl-infra`'s Terraform** (`auth = true` in
+the `applications` variable), this step is automatic: `terraform apply`
+generates the secret once and writes the *same plaintext value* into both the
+app's own `<app>-terraform-secrets` Secret (as `AUTH_CLIENT_ID` /
+`AUTH_CLIENT_SECRET`) and into this server's shared `auth-client-secrets`
+Secret (as `<APP>_CLIENT_SECRET`, matching `clientSecretEnv` above). See
+homectl-infra's
+[deploying-an-app.md → Auth sidecar](https://github.com/GagnatDev/homectl-infra/blob/main/docs/deploying-an-app.md#auth-sidecar-auth--true).
+Nothing to run by hand — just reference `MY_APP_CLIENT_SECRET` from your app's
+env (`envFrom: <app>-terraform-secrets`).
+
+**Otherwise** (an app Terraform doesn't manage), generate one yourself and
+store the *identical plaintext* value in both places — homectl-auth compares
+the client secret it receives directly, with no hashing. `auth-client-secrets`
+is otherwise Terraform-owned, so add the key by hand with `patch` rather than
+`terraform apply` overwriting it:
+
 ```bash
-# Generate a random secret
-openssl rand -hex 32
+SECRET=$(openssl rand -hex 32)
 
-# Hash it (bcrypt cost 12)
-node -e "require('bcryptjs').hash('YOUR_RANDOM_SECRET', 12).then(console.log)"
-
-# Store the hash as a Kubernetes secret
-kubectl create secret generic auth-secrets \
-  --namespace homectl \
-  --from-literal=MY_APP_CLIENT_SECRET='$2b$12$...' \
-  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n homectl patch secret auth-client-secrets --type=json -p \
+  "[{\"op\":\"add\",\"path\":\"/data/MY_APP_CLIENT_SECRET\",\"value\":\"$(echo -n "$SECRET" | base64 -w0)\"}]"
+kubectl -n homectl rollout restart deploy/auth   # Secret-backed env vars don't hot-reload
 ```
 
-Add the env var reference to `k8s/deployment.yaml`.
+Give your app the same `$SECRET` value via its own env/Secret, then add the env
+var reference to `k8s/deployment.yaml`.
 
 ### 3. Install the client package
 
@@ -374,7 +386,7 @@ The deployment uses three Kubernetes Secrets:
 
 **`auth-terraform-secrets`** — created automatically by `terraform apply` in `homectl-infra`. Contains `DATABASE_URL` pointing at the dedicated `auth` database user. No manual step needed.
 
-**`auth-client-secrets`** — created automatically by `terraform apply` in `homectl-infra`, generated from the registered apps and config. Holds the bcrypt hash of each app's client secret, one entry per registered app; each key matches the app's `clientSecretEnv` in `apps.json` (e.g. `WORKBENCH_CLIENT_SECRET`) and is consumed via `envFrom`. No manual step needed.
+**`auth-client-secrets`** — created automatically by `terraform apply` in `homectl-infra`, generated from the registered apps and config. Holds the plaintext client secret for each `auth = true` app (the same value Terraform writes to that app's own `AUTH_CLIENT_SECRET`), one entry per registered app; each key matches the app's `clientSecretEnv` in `apps.json` (e.g. `WORKBENCH_CLIENT_SECRET`) and is consumed via `envFrom`. No manual step needed. `apps.json` must be rolled out *after* `terraform apply` creates the corresponding key, or the auth pod crashloops on the missing env var; a key change also needs `kubectl rollout restart deploy/auth` since Secret-backed env vars don't hot-reload.
 
 **`auth-secrets`** — hand-managed. Create once with your own values:
 
@@ -409,7 +421,7 @@ This transfers ownership of all tables, sequences, and other objects in a single
 | `auth-terraform-secrets` | `DATABASE_URL` | PostgreSQL connection string — managed by Terraform |
 | `auth-secrets` | `RS256_PRIVATE_KEY_PEM` | Base64-encoded RS256 private key PEM (PKCS#8) — used to sign JWTs |
 | `auth-secrets` | `RS256_PUBLIC_KEY_PEM` | Base64-encoded RS256 public key PEM (SPKI) — used to derive JWKS `kid` and serve `/.well-known/jwks.json` |
-| `auth-client-secrets` | `<APP>_CLIENT_SECRET` | bcrypt hash of each app's client secret — managed by Terraform |
+| `auth-client-secrets` | `<APP>_CLIENT_SECRET` | plaintext client secret for each app — managed by Terraform |
 
 ### Required GitHub Actions secrets
 

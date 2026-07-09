@@ -24,7 +24,7 @@ spec:
             - secretRef:
                 name: auth-terraform-secrets   # Terraform-managed: DATABASE_URL
             - secretRef:
-                name: auth-client-secrets      # Per-app client secret hashes, e.g. WORKBENCH_CLIENT_SECRET
+                name: auth-client-secrets      # Per-app plaintext client secrets, e.g. WORKBENCH_CLIENT_SECRET
           env:
             - name: NODE_ENV
               value: production

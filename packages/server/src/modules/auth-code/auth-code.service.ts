@@ -9,9 +9,9 @@
 import { randomBytes, createHash } from 'crypto';
 import { getPool } from '../../db';
 import { findAccess, getAccessForUser } from '../app-access/app-access.repository';
-import { getApp, getClientSecretHash, validateRedirectUri } from '../../config/apps';
+import { getApp, validateRedirectUri } from '../../config/apps';
 import { signAccessToken } from '../token/token.service';
-import bcrypt from 'bcryptjs';
+import { verifyClientSecret } from '../client/client.service';
 
 const CODE_TTL_SECONDS = 5 * 60; // 5 minutes
 
@@ -75,14 +75,7 @@ export async function exchangeCode(input: ExchangeCodeInput): Promise<ExchangeCo
     return { ok: false, error: 'INVALID_CLIENT' };
   }
 
-  let secretHash: string;
-  try {
-    secretHash = getClientSecretHash(app);
-  } catch {
-    return { ok: false, error: 'INVALID_CLIENT' };
-  }
-
-  const secretValid = await bcrypt.compare(input.clientSecret, secretHash);
+  const secretValid = await verifyClientSecret(input.clientId, input.clientSecret);
   if (!secretValid) {
     return { ok: false, error: 'INVALID_CLIENT' };
   }
