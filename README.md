@@ -395,11 +395,6 @@ Key points:
   Any value that isn't a valid bcrypt hash is rejected per-entry.
 - **Email is the identity.** Users are de-duplicated on email (the only UNIQUE
   column). `username` is a display handle and may repeat across accounts.
-  Caveat: dropping the old UNIQUE constraint on `username` (migration 009)
-  requires the DB role to own the `users` table. When it doesn't, the migration
-  logs a warning and skips the drop so the service still boots; duplicate
-  usernames are then rejected per-entry as `invalid` until the table owner runs
-  `ALTER TABLE homectl_auth.users DROP CONSTRAINT IF EXISTS users_username_key;`.
 - **Idempotent.** Re-running is safe. A new email creates the user and grants it
   access to the calling app; an email that already exists is left untouched
   (password and `isAdmin` are never overwritten) but is still granted access to
