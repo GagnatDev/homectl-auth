@@ -183,9 +183,6 @@ internalUsersRouter.post('/internal/users/import', async (req, res) => {
       const user = await createUser({ email, username, passwordHash });
       userId = user.id;
     } catch (err) {
-      // Email is the only unique key on users (username may collide freely).
-      // A unique violation here means the email was inserted concurrently
-      // between the lookup above and this insert — treat it as already-present.
       if ((err as { code?: string }).code === PG_UNIQUE_VIOLATION) {
         const existing = await findUserByEmail(email);
         let granted = false;
