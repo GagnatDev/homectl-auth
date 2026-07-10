@@ -100,3 +100,20 @@ jobs:
       - name: Verify deployment
         run: |
           kubectl get pods --namespace homectl -l app=homectl-auth
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== pods ==="
+          kubectl get pods --namespace homectl -l app=homectl-auth -o wide
+          echo "=== describe ==="
+          kubectl describe pods --namespace homectl -l app=homectl-auth
+          echo "=== events ==="
+          kubectl get events --namespace homectl --sort-by=.lastTimestamp | tail -50
+          echo "=== pod logs ==="
+          for pod in $(kubectl get pods --namespace homectl -l app=homectl-auth -o name); do
+            echo "--- $pod ---"
+            kubectl logs --namespace homectl "$pod" --tail=100 || true
+            echo "--- $pod (previous) ---"
+            kubectl logs --namespace homectl "$pod" --previous --tail=100 || true
+          done
