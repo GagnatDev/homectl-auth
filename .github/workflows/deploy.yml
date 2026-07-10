@@ -110,9 +110,3 @@ jobs:
           kubectl describe pods --namespace homectl -l app=homectl-auth
           echo "=== events ==="
           kubectl get events --namespace homectl --sort-by=.lastTimestamp | tail -50
-          # NOTE: deliberately does NOT dump `kubectl logs`. This is a public
-          # repo, so Actions logs are world-readable; the service's request
-          # logger emits full request/response headers (Authorization bearer
-          # tokens, session cookies, Set-Cookie), which would be exposed here.
-          # `describe`/`events` above are safe (secret env values are masked).
-          # Pull pod logs manually with kubectl when debugging a failure.
