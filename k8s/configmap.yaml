@@ -30,5 +30,16 @@ data:
           { "name": "member", "rank": 1 },
           { "name": "owner", "rank": 2 }
         ]
+      },
+      {
+        "id": "unforked",
+        "name": "Unforked",
+        "clientSecretEnv": "UNFORKED_CLIENT_SECRET",
+        "allowedRedirectUris": ["https://unforked.homectl.no/auth/callback"],
+        "allowedOrigins": ["https://unforked.homectl.no"],
+        "roles": [
+          { "name": "user", "rank": 1 },
+          { "name": "admin", "rank": 2 }
+        ]
       }
     ]
