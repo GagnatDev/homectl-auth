@@ -183,9 +183,23 @@ internalUsersRouter.post('/internal/users/import', async (req, res) => {
       const user = await createUser({ email, username, passwordHash });
       userId = user.id;
     } catch (err) {
-      // Email is the only unique key on users (username may collide freely).
-      // A unique violation here means the email was inserted concurrently
-      // between the lookup above and this insert — treat it as already-present.
+      // Migration 009 drops the UNIQUE constraint on username, but it can only
+      // do so when the DB role owns the table — in environments where it
+      // couldn't (it warns and skips), a colliding username still violates
+      // users_username_key. Report that per-entry instead of treating it as an
+      // email duplicate.
+      if (
+        (err as { code?: string }).code === PG_UNIQUE_VIOLATION &&
+        (err as { constraint?: string }).constraint === 'users_username_key'
+      ) {
+        invalid(
+          'username already exists (users.username is still UNIQUE in this database; see migration 009)',
+        );
+        continue;
+      }
+      // Otherwise the violated key is email. A unique violation here means the
+      // email was inserted concurrently between the lookup above and this
+      // insert — treat it as already-present.
       if ((err as { code?: string }).code === PG_UNIQUE_VIOLATION) {
         const existing = await findUserByEmail(email);
         let granted = false;
