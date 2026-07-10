@@ -9,6 +9,7 @@ import { authorizeRouter } from './routes/authorize.router';
 import { tokenRouter } from './routes/token.router';
 import { sessionRouter } from './routes/session.router';
 import { internalRouter } from './routes/internal.router';
+import { internalUsersRouter } from './routes/internal-users.router';
 import { inviteRouter } from './routes/invite.router';
 import { resetPasswordRouter } from './routes/reset-password.router';
 import { adminRouter } from './routes/admin/admin.router';
@@ -113,6 +114,7 @@ export function createApp(): Express {
   // Server-to-server, client-authenticated endpoints for in-cluster callers
   // (e.g. an auth sidecar). Reached via the ClusterIP Service, not the ingress.
   app.use(internalRouter);
+  app.use(internalUsersRouter);
   app.use(inviteRouter);
   app.use(resetPasswordRouter);
   // GitHub OAuth login routes must precede adminRouter so /admin/login and

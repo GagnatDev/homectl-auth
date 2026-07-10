@@ -359,6 +359,58 @@ access token + rotated refresh token in the body). It is the machine analogue of
 See [ADR 0001](docs/adr/0001-forward-auth-sidecar.md) and the sidecar sketch in
 [`docs/sidecar/`](docs/sidecar/README.md).
 
+### Migrating existing users into homectl-auth
+
+An app moving onto homectl-auth can seed its existing user accounts up front so
+users keep their credentials — no forced password reset. homectl-auth exposes a
+server-to-server import endpoint:
+
+`POST /internal/users/import`
+
+```jsonc
+{
+  "client_id": "my-app",
+  "client_secret": "…",            // the app's client secret
+  "users": [
+    {
+      "email": "alice@example.com",  // identity key — users are matched on email
+      "username": "alice",
+      "isAdmin": false,
+      "passwordHash": "$2b$12$…",    // bcrypt (bcryptjs, cost 12), sent already hashed
+      "role": "member"               // optional; app role for the access grant
+    }
+  ]
+}
+```
+
+Like `/internal/refresh`, it is authenticated with the app's `client_id` +
+`client_secret` (constant-time compared), carries no browser `Origin` and sets
+no cookies, and is meant to be reached over the in-cluster ClusterIP Service
+(`http://homectl-auth.homectl.svc.cluster.local`), not the public ingress.
+
+Key points:
+
+- **Passwords are sent pre-hashed.** homectl-auth hashes with bcrypt via
+  `bcryptjs` at cost 12; send the same and the hash is stored verbatim, so users
+  log in with their current password unchanged. Plaintext is never transmitted.
+  Any value that isn't a valid bcrypt hash is rejected per-entry.
+- **Email is the identity.** Users are de-duplicated on email (the only UNIQUE
+  column). `username` is a display handle and may repeat across accounts.
+- **Idempotent.** Re-running is safe. A new email creates the user and grants it
+  access to the calling app; an email that already exists is left untouched
+  (password and `isAdmin` are never overwritten) but is still granted access to
+  the calling app — the one-account-many-apps SSO model.
+- **`role`** is optional and validated against the app's configured roles; when
+  omitted it defaults to the app's lowest-rank role. It sets the `app_access`
+  grant for the calling app only.
+- **Best-effort batch.** Once the client is authenticated the call returns `200`
+  with a `summary` and a per-entry `results` array (`created` / `skipped` /
+  `invalid`), so a bad entry never fails the whole import.
+
+Because the ingress caps request bodies at 1 MB, large imports are another
+reason to call this in-cluster (via the Service) rather than through
+`auth.homectl.no`; chunk very large user sets into multiple requests.
+
 ### 5. Browser helper
 
 ```typescript
