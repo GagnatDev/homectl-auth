@@ -375,7 +375,6 @@ server-to-server import endpoint:
     {
       "email": "alice@example.com",  // identity key — users are matched on email
       "username": "alice",
-      "isAdmin": false,
       "passwordHash": "$2b$12$…",    // bcrypt (bcryptjs, cost 12), sent already hashed
       "role": "member"               // optional; app role for the access grant
     }
@@ -403,6 +402,11 @@ Key points:
 - **`role`** is optional and validated against the app's configured roles; when
   omitted it defaults to the app's lowest-rank role. It sets the `app_access`
   grant for the calling app only.
+- **No `isAdmin`.** Imported users are always created non-admin. homectl-auth's
+  `isAdmin` is an operator-level, service-wide flag (access to the admin GUI that
+  manages every user and app), not an app-scoped role, so a consuming app cannot
+  set it. Express an app's own "admin" concept with the per-app `role` above
+  (e.g. `"role": "admin"`); any `isAdmin` sent in the payload is ignored.
 - **Best-effort batch.** Once the client is authenticated the call returns `200`
   with a `summary` and a per-entry `results` array (`created` / `skipped` /
   `invalid`), so a bad entry never fails the whole import.

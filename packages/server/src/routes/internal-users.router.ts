@@ -3,7 +3,7 @@
  * homectl-auth.
  *
  * POST /internal/users/import
- *   Body: { client_id, client_secret, users: [{ email, username, isAdmin?,
+ *   Body: { client_id, client_secret, users: [{ email, username,
  *           passwordHash, role? }] }
  *
  * A migrating app calls this once, up front, to seed its existing users into
@@ -11,6 +11,12 @@
  * hashed* password (bcrypt, cost 12 — the same scheme homectl-auth uses, so the
  * hash is stored verbatim and users can log in with their current password with
  * no reset needed). Plaintext passwords are never sent.
+ *
+ * Imported users are always created NON-admin. homectl-auth's `isAdmin` flag
+ * grants operator access to the domain-wide admin GUI (manage every user, all
+ * app access, invites, resets) — it is not an app-scoped role, so a consuming
+ * app must not be able to set it. An app's own "admin" concept belongs in the
+ * per-app `role` grant (e.g. role: "admin"), which is scoped to that app only.
  *
  * Same trust model as POST /internal/refresh: authenticated with the app's
  * client_id + client_secret (constant-time compared), no browser Origin, no
@@ -56,7 +62,6 @@ const PG_UNIQUE_VIOLATION = '23505';
 type ImportUserInput = {
   email?: unknown;
   username?: unknown;
-  isAdmin?: unknown;
   passwordHash?: unknown;
   role?: unknown;
 };
@@ -120,7 +125,6 @@ internalUsersRouter.post('/internal/users/import', async (req, res) => {
     const email = typeof entry.email === 'string' ? entry.email.trim() : null;
     const username = typeof entry.username === 'string' ? entry.username.trim() : null;
     const passwordHash = typeof entry.passwordHash === 'string' ? entry.passwordHash : null;
-    const isAdmin = entry.isAdmin === true;
 
     const invalid = (error: string): void => {
       results.push({ index, email, username, status: 'invalid', error });
@@ -174,7 +178,9 @@ internalUsersRouter.post('/internal/users/import', async (req, res) => {
 
     let userId: string;
     try {
-      const user = await createUser({ email, username, passwordHash, isAdmin });
+      // Always non-admin: isAdmin is an operator-level, service-wide flag that a
+      // consuming app must not be able to set. It falls back to the DB default.
+      const user = await createUser({ email, username, passwordHash });
       userId = user.id;
     } catch (err) {
       // Email is the only unique key on users (username may collide freely).

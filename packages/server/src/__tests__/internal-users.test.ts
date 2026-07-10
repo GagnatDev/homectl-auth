@@ -43,7 +43,7 @@ describe('POST /internal/users/import', () => {
       .post('/internal/users/import')
       .send(
         await importBody([
-          { email: 'alice@example.com', username: 'alice', isAdmin: false, passwordHash, role: 'editor' },
+          { email: 'alice@example.com', username: 'alice', passwordHash, role: 'editor' },
         ]),
       );
 
@@ -61,20 +61,34 @@ describe('POST /internal/users/import', () => {
     expect(access).toEqual([expect.objectContaining({ appId: TEST_APP_ID, role: 'editor' })]);
   });
 
-  it('preserves isAdmin=true and defaults the role to the app lowest rank when omitted', async () => {
-    const passwordHash = await hashPassword('AdminPass1!');
+  it('defaults the role to the app lowest rank when omitted', async () => {
+    const passwordHash = await hashPassword('SomePass1!');
 
     const res = await request(app)
       .post('/internal/users/import')
-      .send(await importBody([{ email: 'boss@example.com', username: 'boss', isAdmin: true, passwordHash }]));
+      .send(await importBody([{ email: 'plainuser@example.com', username: 'plainuser', passwordHash }]));
 
     expect(res.status).toBe(200);
     expect(res.body.results[0]).toMatchObject({ status: 'created', role: 'viewer', granted: true });
 
-    const user = await findUserByEmail('boss@example.com');
-    expect(user!.isAdmin).toBe(true);
+    const user = await findUserByEmail('plainuser@example.com');
     const access = await getAccessForUser(user!.id);
     expect(access[0]!.role).toBe('viewer');
+  });
+
+  it('ignores any isAdmin in the payload — imported users are never operator admins', async () => {
+    const passwordHash = await hashPassword('AdminPass1!');
+
+    const res = await request(app)
+      .post('/internal/users/import')
+      // isAdmin: true must NOT elevate the imported user to a service admin.
+      .send(await importBody([{ email: 'boss@example.com', username: 'boss', isAdmin: true, passwordHash }]));
+
+    expect(res.status).toBe(200);
+    expect(res.body.results[0]).toMatchObject({ status: 'created' });
+
+    const user = await findUserByEmail('boss@example.com');
+    expect(user!.isAdmin).toBe(false);
   });
 
   it('is idempotent: re-importing the same email skips without overwriting, but ensures access', async () => {
@@ -102,6 +116,22 @@ describe('POST /internal/users/import', () => {
     // But access to the calling app is granted.
     const access = await getAccessForUser(user!.id);
     expect(access).toEqual([expect.objectContaining({ appId: TEST_APP_ID, role: 'admin' })]);
+  });
+
+  it('leaves an existing admin as admin — import never demotes an operator', async () => {
+    const admin = await createTestUser({ email: 'op@example.com', username: 'op', isAdmin: true });
+    const passwordHash = await hashPassword('Whatever1!');
+
+    const res = await request(app)
+      .post('/internal/users/import')
+      .send(await importBody([{ email: 'op@example.com', username: 'op', passwordHash, role: 'viewer' }]));
+
+    expect(res.status).toBe(200);
+    expect(res.body.results[0]).toMatchObject({ status: 'skipped', userId: admin.id });
+
+    const user = await findUserByEmail('op@example.com');
+    // Existing operator admin flag is preserved untouched.
+    expect(user!.isAdmin).toBe(true);
   });
 
   it('allows a duplicate username as long as the email is unique (email is the identity key)', async () => {
