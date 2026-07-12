@@ -9,6 +9,7 @@ import {
   createTestUserWithAccess,
   truncateTables,
 } from './helpers/test-app-config';
+import { getPool } from '../db';
 
 const REDIRECT_URI = TEST_APP.allowedRedirectUris[0]!;
 const APP_ORIGIN = TEST_APP.allowedOrigins[0]!;
@@ -85,23 +86,71 @@ describe('POST /refresh', () => {
     expect(newRefreshToken).not.toBe(refreshToken);
   });
 
-  it('rejects a stale refresh token (already rotated)', async () => {
+  it('tolerates a concurrent re-use of the same token within the grace window', async () => {
+    // The stateless sidecar keeps its refresh token in a cookie, so parallel
+    // browser requests can all present the same token when it nears expiry.
+    // The first rotates it; siblings that arrive within the grace window must
+    // still succeed rather than being bounced to login.
     const user = await createTestUserWithAccess(TEST_APP_ID, 'editor');
     const setCookies = await loginAndGetCookies(user.username, user.plainPassword);
     const oldRefreshToken = extractCookie(setCookies, `homectl_refresh_${TEST_APP_ID}`);
 
-    // First refresh — consumes the old token
-    await request(app)
+    // First refresh — rotates the token.
+    const res1 = await request(app)
       .post('/refresh')
       .set('Origin', APP_ORIGIN)
       .set('Cookie', `homectl_refresh_${TEST_APP_ID}=${oldRefreshToken}`);
+    expect(res1.status).toBe(200);
 
-    // Second refresh with the same old token — should fail
+    // Second refresh with the SAME old token, still within the grace window.
     const res2 = await request(app)
       .post('/refresh')
       .set('Origin', APP_ORIGIN)
       .set('Cookie', `homectl_refresh_${TEST_APP_ID}=${oldRefreshToken}`);
+    expect(res2.status).toBe(200);
+    expect(res2.body).toHaveProperty('access_token');
+  });
 
+  it('handles two parallel refreshes of the same token without logging out', async () => {
+    const user = await createTestUserWithAccess(TEST_APP_ID, 'editor');
+    const setCookies = await loginAndGetCookies(user.username, user.plainPassword);
+    const oldRefreshToken = extractCookie(setCookies, `homectl_refresh_${TEST_APP_ID}`);
+
+    const fire = () =>
+      request(app)
+        .post('/refresh')
+        .set('Origin', APP_ORIGIN)
+        .set('Cookie', `homectl_refresh_${TEST_APP_ID}=${oldRefreshToken}`);
+
+    const [a, b] = await Promise.all([fire(), fire()]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+  });
+
+  it('rejects a replayed refresh token once the grace window has passed', async () => {
+    const user = await createTestUserWithAccess(TEST_APP_ID, 'editor');
+    const setCookies = await loginAndGetCookies(user.username, user.plainPassword);
+    const oldRefreshToken = extractCookie(setCookies, `homectl_refresh_${TEST_APP_ID}`);
+
+    // First refresh — rotates and stamps the old token.
+    const res1 = await request(app)
+      .post('/refresh')
+      .set('Origin', APP_ORIGIN)
+      .set('Cookie', `homectl_refresh_${TEST_APP_ID}=${oldRefreshToken}`);
+    expect(res1.status).toBe(200);
+
+    // Age every rotated stamp well beyond the grace window, so re-presenting
+    // the old token now reads as replay rather than concurrency.
+    await getPool().query(
+      `UPDATE homectl_auth.sessions
+          SET rotated_at = NOW() - INTERVAL '1 hour'
+        WHERE rotated_at IS NOT NULL`,
+    );
+
+    const res2 = await request(app)
+      .post('/refresh')
+      .set('Origin', APP_ORIGIN)
+      .set('Cookie', `homectl_refresh_${TEST_APP_ID}=${oldRefreshToken}`);
     expect(res2.status).toBe(401);
   });
 

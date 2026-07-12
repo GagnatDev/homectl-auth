@@ -20,6 +20,18 @@ import { type Response } from 'express';
 const REFRESH_TTL_DAYS = 30;
 const SSO_TTL_DAYS = 30;
 
+/**
+ * How long a just-rotated refresh token stays honourable.
+ *
+ * The stateless sidecar keeps its refresh token in a cookie, so a browser can
+ * fire several requests carrying the SAME token that all cross the refresh
+ * threshold together. Without tolerance the first refresh rotates the token and
+ * every sibling request 401s — the sidecar then clears the session and forces a
+ * re-login. Honouring the old token for a short window lets those concurrent
+ * refreshes succeed; anything presenting it later is treated as replay.
+ */
+const ROTATION_GRACE_SECONDS = 30;
+
 /** Parent domain for per-app refresh cookies (override via REFRESH_COOKIE_DOMAIN). */
 export function getRefreshCookieDomain(): string | undefined {
   return (
@@ -101,34 +113,90 @@ export async function createSession(userId: string, clientId: string): Promise<s
 }
 
 /**
- * Rotate a refresh token: atomically invalidate the old one and issue a new one.
- * Returns the new raw token, or null if the old token was not found / expired.
+ * Rotate a refresh token: mark the presented token as rotated and issue a fresh
+ * successor. Returns the new raw token, or null if the presented token was not
+ * found, expired, or is a replay of a token rotated longer than the grace
+ * window ago.
+ *
+ * Rotation does NOT delete the old row. It stamps it with `rotated_at` and
+ * keeps it for `ROTATION_GRACE_SECONDS`, so concurrent requests that were
+ * already in flight with the same token — before the first refresh's Set-Cookie
+ * reached the browser — are honoured instead of being logged out. Each such
+ * caller receives its own fresh successor; the browser keeps whichever cookie
+ * arrives last and the extra rows are purged by the cleanup job. A token
+ * presented after the grace window has elapsed is treated as replay (null).
+ *
+ * The presented row is locked FOR UPDATE so the first-use stamp is applied
+ * exactly once even under concurrent refreshes.
  */
 export async function rotateSession(
   oldRawToken: string,
   clientId: string,
 ): Promise<{ newToken: string; userId: string } | null> {
   const oldHash = hashToken(oldRawToken);
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
 
-  // Delete old session and return its data in one round-trip
-  const { rows } = await getPool().query<Record<string, unknown>>(
-    `DELETE FROM homectl_auth.sessions
-     WHERE token_hash = $1 AND client_id = $2
-     RETURNING user_id, expires_at`,
-    [oldHash, clientId],
-  );
+    const { rows } = await client.query<Record<string, unknown>>(
+      `SELECT user_id, expires_at, rotated_at
+         FROM homectl_auth.sessions
+        WHERE token_hash = $1 AND client_id = $2
+        FOR UPDATE`,
+      [oldHash, clientId],
+    );
 
-  if (!rows[0]) return null;
+    const row = rows[0];
+    if (!row) {
+      await client.query('ROLLBACK');
+      return null; // unknown token
+    }
 
-  const session = rows[0];
-  const expiresAt = session['expires_at'] as Date;
-  if (expiresAt < new Date()) return null;
+    const expiresAt = row['expires_at'] as Date;
+    if (expiresAt < new Date()) {
+      await client.query('ROLLBACK');
+      return null; // expired
+    }
 
-  const userId = session['user_id'] as string;
+    const rotatedAt = row['rotated_at'] as Date | null;
+    if (rotatedAt) {
+      // Already rotated: honour only within the grace window, else it is replay.
+      const graceCutoff = new Date(Date.now() - ROTATION_GRACE_SECONDS * 1000);
+      if (rotatedAt < graceCutoff) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+    } else {
+      // First use: stamp (but keep) the presented token so siblings within the
+      // grace window still resolve.
+      await client.query(
+        `UPDATE homectl_auth.sessions SET rotated_at = NOW()
+          WHERE token_hash = $1 AND client_id = $2`,
+        [oldHash, clientId],
+      );
+    }
 
-  // Issue new token
-  const newToken = await createSession(userId, clientId);
-  return { newToken, userId };
+    const userId = row['user_id'] as string;
+
+    // Issue the successor token on the same connection so it commits atomically
+    // with the rotation stamp.
+    const raw = randomBytes(32).toString('hex');
+    const newHash = hashToken(raw);
+    const newExpiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
+    await client.query(
+      `INSERT INTO homectl_auth.sessions (token_hash, user_id, client_id, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [newHash, userId, clientId, newExpiresAt],
+    );
+
+    await client.query('COMMIT');
+    return { newToken: raw, userId };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -151,7 +219,8 @@ export async function findSession(
 ): Promise<Session | null> {
   const tokenHash = hashToken(rawToken);
   const { rows } = await getPool().query<Record<string, unknown>>(
-    'SELECT * FROM homectl_auth.sessions WHERE token_hash = $1 AND client_id = $2',
+    `SELECT * FROM homectl_auth.sessions
+      WHERE token_hash = $1 AND client_id = $2 AND rotated_at IS NULL`,
     [tokenHash, clientId],
   );
   if (!rows[0]) return null;

@@ -76,7 +76,10 @@ describe('POST /internal/refresh', () => {
     expect(payload.sub).toBe(user.id);
   });
 
-  it('invalidates the old refresh token after rotation', async () => {
+  it('tolerates re-use of the just-rotated token within the grace window', async () => {
+    // The sidecar is stateless, so concurrent requests can present the same
+    // token when it nears expiry. A re-use within the grace window is a
+    // legitimate concurrent refresh and must succeed, not 401.
     const user = await createTestUserWithAccess(TEST_APP_ID, 'editor');
     const refreshToken = await loginAndGetRefreshToken(user.username, user.plainPassword);
 
@@ -87,14 +90,14 @@ describe('POST /internal/refresh', () => {
     });
     expect(first.status).toBe(200);
 
-    // Reusing the consumed token must fail.
+    // Same token again, still within the grace window → honoured.
     const replay = await request(app).post('/internal/refresh').send({
       client_id: TEST_APP_ID,
       client_secret: TEST_CLIENT_SECRET,
       refresh_token: refreshToken,
     });
-    expect(replay.status).toBe(401);
-    expect(replay.body.error).toBe('invalid_refresh_token');
+    expect(replay.status).toBe(200);
+    expect(replay.body).toHaveProperty('access_token');
 
     // The newly issued token works.
     const next = await request(app).post('/internal/refresh').send({
@@ -103,6 +106,34 @@ describe('POST /internal/refresh', () => {
       refresh_token: first.body.refresh_token,
     });
     expect(next.status).toBe(200);
+  });
+
+  it('invalidates the old refresh token once the grace window has passed', async () => {
+    const user = await createTestUserWithAccess(TEST_APP_ID, 'editor');
+    const refreshToken = await loginAndGetRefreshToken(user.username, user.plainPassword);
+
+    const first = await request(app).post('/internal/refresh').send({
+      client_id: TEST_APP_ID,
+      client_secret: TEST_CLIENT_SECRET,
+      refresh_token: refreshToken,
+    });
+    expect(first.status).toBe(200);
+
+    // Age every rotation stamp past the grace window: a later re-use of the
+    // consumed token now reads as replay rather than concurrency.
+    await getPool().query(
+      `UPDATE homectl_auth.sessions
+          SET rotated_at = NOW() - INTERVAL '1 hour'
+        WHERE rotated_at IS NOT NULL`,
+    );
+
+    const replay = await request(app).post('/internal/refresh').send({
+      client_id: TEST_APP_ID,
+      client_secret: TEST_CLIENT_SECRET,
+      refresh_token: refreshToken,
+    });
+    expect(replay.status).toBe(401);
+    expect(replay.body.error).toBe('invalid_refresh_token');
   });
 
   it('rejects a bad client secret with 401 invalid_client', async () => {
