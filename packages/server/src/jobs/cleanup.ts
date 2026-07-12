@@ -36,6 +36,15 @@ export async function runCleanup(): Promise<void> {
     totalDeleted += rowCount ?? 0;
   }
 
+  // Rotated refresh tokens are kept briefly (ROTATION_GRACE_SECONDS) so
+  // concurrent refreshes are tolerated, then become dead weight long before
+  // their 30-day expires_at. Purge them once well past the grace window.
+  const { rowCount: rotatedDeleted } = await pool.query(
+    `DELETE FROM homectl_auth.sessions
+      WHERE rotated_at IS NOT NULL AND rotated_at < NOW() - INTERVAL '1 hour'`,
+  );
+  totalDeleted += rotatedDeleted ?? 0;
+
   if (totalDeleted > 0) {
     logger.info({ totalDeleted }, 'Cleanup job: deleted expired rows');
   }
