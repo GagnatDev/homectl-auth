@@ -168,6 +168,42 @@ describe('unauthenticated requests', () => {
   });
 });
 
+describe('public static files', () => {
+  it('proxies files below /static/ without authentication and strips forged identity headers', async () => {
+    const res = await request(buildApp())
+      .get('/static/app.js')
+      .set('Authorization', 'Bearer forged-token')
+      .set('X-Homectl-User', 'attacker')
+      .set('X-Homectl-Email', 'attacker@evil.com');
+
+    expect(res.status).toBe(200);
+    expect(res.body.path).toBe('/static/app.js');
+    expect(res.body.headers.authorization).toBeUndefined();
+    expect(res.body.headers['x-homectl-user']).toBeUndefined();
+    expect(res.body.headers['x-homectl-email']).toBeUndefined();
+  });
+
+  it('requires authentication for static files when the bypass is disabled', async () => {
+    const disabledConfig = loadConfig({
+      PUBLIC_AUTH_URL,
+      INTERNAL_AUTH_URL,
+      AUTH_CLIENT_ID: CLIENT_ID,
+      AUTH_CLIENT_SECRET: 'client-secret',
+      APP_BASE_URL,
+      UPSTREAM: config.upstream,
+      COOKIE_KEY: COOKIE_KEY_B64,
+      NODE_ENV: 'test',
+      BYPASS_STATIC_AUTH: 'false',
+    } as NodeJS.ProcessEnv);
+
+    const res = await request(createProxyApp({ config: disabledConfig, jwksProvider: localJwks }))
+      .get('/static/app.js')
+      .set('Accept', 'application/javascript');
+
+    expect(res.status).toBe(401);
+  });
+});
+
 // ── Callback ────────────────────────────────────────────────────────────────
 
 describe('OAuth callback', () => {

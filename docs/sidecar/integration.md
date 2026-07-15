@@ -380,6 +380,7 @@ missing or malformed value prints every problem and exits non-zero.
 | `LISTEN_PORT` | no | `4180` | Port ingress targets. |
 | `REFRESH_SKEW_SECONDS` | no | `60` | Refresh this many seconds before the access token expires. |
 | `SESSION_COOKIE_NAME` | no | `hs_session` | Name of the sidecar's encrypted session cookie. |
+| `BYPASS_STATIC_AUTH` | no | `true` | Proxy files below `/static/` without authentication. Set to `false` to require auth for them. The proxy strips `Authorization` and `X-Homectl-*` headers on bypassed requests. |
 | `DEV_FAKE_IDENTITY` | no (dev only) | — | See Local development. **Fatal if set when `NODE_ENV=production`.** |
 
 The sidecar also honors `LOG_LEVEL` (pino levels; default `info`) and

@@ -20,6 +20,7 @@ describe('loadConfig', () => {
     expect(c.listenPort).toBe(4180);
     expect(c.refreshSkewSeconds).toBe(60);
     expect(c.sessionCookieName).toBe('hs_session');
+    expect(c.bypassStaticAuth).toBe(true);
     expect(c.redirectUri).toBe('https://workbench.homectl.no/auth/callback');
     expect(c.jwksUrl).toBe('http://homectl-auth.homectl/.well-known/jwks.json');
     expect(c.cookieKey).toHaveLength(32);
@@ -35,6 +36,14 @@ describe('loadConfig', () => {
     const c = loadConfig({ ...VALID, CALLBACK_PATH: 'cb', LOGOUT_PATH: 'out' });
     expect(c.callbackPath).toBe('/cb');
     expect(c.logoutPath).toBe('/out');
+  });
+
+  it('allows the static auth bypass to be disabled', () => {
+    expect(loadConfig({ ...VALID, BYPASS_STATIC_AUTH: 'false' }).bypassStaticAuth).toBe(false);
+  });
+
+  it('rejects an invalid static auth bypass setting', () => {
+    expect(() => loadConfig({ ...VALID, BYPASS_STATIC_AUTH: 'yes' })).toThrow(/BYPASS_STATIC_AUTH/);
   });
 
   it('lists every missing required var', () => {
