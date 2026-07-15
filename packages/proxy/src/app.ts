@@ -216,8 +216,25 @@ export function createProxyApp(opts: CreateProxyAppOptions): Express {
     res.redirect(302, '/');
   });
 
+  // ── Public static files ───────────────────────────────────────────────────
+  // Static files are public by default so browsers can load an app's assets
+  // before authentication. Never forward client-supplied identity headers.
+  if (config.bypassStaticAuth) {
+    app.use((req, _res, next) => {
+      if (req.path.startsWith('/static/')) {
+        stripInboundIdentity(req);
+      }
+      next();
+    });
+  }
+
   // ── Authenticate + inject ─────────────────────────────────────────────────
   app.use(async (req: Request, res: Response, next: NextFunction) => {
+    if (config.bypassStaticAuth && req.path.startsWith('/static/')) {
+      next();
+      return;
+    }
+
     const cookies = parseCookies(req.headers['cookie']);
     let session = open(cookies[config.sessionCookieName], config.cookieKey);
 

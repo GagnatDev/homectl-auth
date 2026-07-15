@@ -41,6 +41,8 @@ export type ProxyConfig = {
   refreshSkewSeconds: number;
   /** Sidecar session cookie name. */
   sessionCookieName: string;
+  /** Whether files below /static/ are proxied without requiring a session. */
+  bypassStaticAuth: boolean;
   /** Full public redirect_uri (appBaseUrl + callbackPath). */
   redirectUri: string;
   /** Internal JWKS URL. */
@@ -69,6 +71,12 @@ const path = (name: string, fallback: string) =>
     .trim()
     .default(fallback)
     .transform((v) => (v.startsWith('/') ? v : `/${v}`));
+
+const boolean = (name: string, fallback: boolean) =>
+  z
+    .enum(['true', 'false'], { invalid_type_error: `${name} must be true or false` })
+    .default(String(fallback) as 'true' | 'false')
+    .transform((v) => v === 'true');
 
 const cookieKey = z
   .string({ required_error: 'COOKIE_KEY is required' })
@@ -143,6 +151,7 @@ const envSchema = z.object({
     .nonnegative()
     .default(60),
   SESSION_COOKIE_NAME: z.string().trim().min(1).default('hs_session'),
+  BYPASS_STATIC_AUTH: boolean('BYPASS_STATIC_AUTH', true),
   NODE_ENV: z.string().optional(),
   DEV_FAKE_IDENTITY: devIdentity,
 });
@@ -184,6 +193,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ProxyConfig {
     listenPort: v.LISTEN_PORT,
     refreshSkewSeconds: v.REFRESH_SKEW_SECONDS,
     sessionCookieName: v.SESSION_COOKIE_NAME,
+    bypassStaticAuth: v.BYPASS_STATIC_AUTH,
     redirectUri: `${v.APP_BASE_URL}${v.CALLBACK_PATH}`,
     jwksUrl: `${v.INTERNAL_AUTH_URL}/.well-known/jwks.json`,
     devIdentity: v.DEV_FAKE_IDENTITY,
