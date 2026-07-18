@@ -274,9 +274,9 @@ describe('GET /admin/api/stats/*', () => {
 // ── Retention ──────────────────────────────────────────────────────────────
 
 describe('activity event retention', () => {
-  it('cleanup prunes events older than the default 365 days', async () => {
+  it('cleanup prunes events older than the default 90 days', async () => {
     const user = await createTestUser();
-    await insertEventAt(user.id, 366);
+    await insertEventAt(user.id, 91);
     await insertEventAt(user.id, 5);
 
     await runCleanup();

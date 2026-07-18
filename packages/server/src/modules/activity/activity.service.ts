@@ -6,8 +6,8 @@
  * login or a token refresh, so every recorder swallows and logs errors
  * instead of throwing.
  *
- * Retention is configurable via ACTIVITY_RETENTION_DAYS (default 365); the
- * hourly cleanup job prunes older rows.
+ * Retention is configurable via ACTIVITY_RETENTION_DAYS (default 90); the
+ * daily cleanup job prunes older rows.
  */
 
 import { logger } from '../../logger';
@@ -17,7 +17,7 @@ import {
   type ActivityEventType,
 } from './activity.repository';
 
-const DEFAULT_RETENTION_DAYS = 365;
+const DEFAULT_RETENTION_DAYS = 90;
 
 export function getActivityRetentionDays(): number {
   const raw = process.env['ACTIVITY_RETENTION_DAYS'];

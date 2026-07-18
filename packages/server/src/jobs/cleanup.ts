@@ -1,7 +1,7 @@
 /**
  * Expired row cleanup job
  *
- * Runs every hour and deletes rows that expired more than 1 day ago from:
+ * Runs once a day and deletes rows that expired more than 1 day ago from:
  *   - authorization_codes
  *   - invite_tokens
  *   - password_reset_tokens
@@ -16,7 +16,7 @@ import { logger } from '../logger';
 import { getActivityRetentionDays } from '../modules/activity/activity.service';
 import { deleteEventsOlderThanDays } from '../modules/activity/activity.repository';
 
-const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 1 day
 
 let _interval: ReturnType<typeof setInterval> | null = null;
 
@@ -40,7 +40,9 @@ export async function runCleanup(): Promise<void> {
 
   // Rotated refresh tokens are kept briefly (ROTATION_GRACE_SECONDS) so
   // concurrent refreshes are tolerated, then become dead weight long before
-  // their 30-day expires_at. Purge them once well past the grace window.
+  // their 30-day expires_at. Purge them once well past the grace window —
+  // between runs they are harmless: a rotated token presented after the
+  // window is rejected whether or not its row still exists.
   const { rowCount: rotatedDeleted } = await pool.query(
     `DELETE FROM homectl_auth.sessions
       WHERE rotated_at IS NOT NULL AND rotated_at < NOW() - INTERVAL '1 hour'`,
@@ -48,7 +50,7 @@ export async function runCleanup(): Promise<void> {
   totalDeleted += rotatedDeleted ?? 0;
 
   // Activity events power the admin statistics; keep them for the configured
-  // retention window (ACTIVITY_RETENTION_DAYS, default 365) and prune the rest.
+  // retention window (ACTIVITY_RETENTION_DAYS, default 90) and prune the rest.
   totalDeleted += await deleteEventsOlderThanDays(getActivityRetentionDays());
 
   if (totalDeleted > 0) {
@@ -69,7 +71,7 @@ export function startCleanupJob(): void {
   // Don't hold the process open for this timer
   _interval.unref();
 
-  logger.info('Cleanup job started (interval: 1 hour)');
+  logger.info('Cleanup job started (interval: 1 day)');
 }
 
 export function stopCleanupJob(): void {

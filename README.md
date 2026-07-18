@@ -60,8 +60,8 @@ Successful logins, SSO sign-ins, and session refreshes are recorded in
 page (`/admin/stats`) and the per-user activity view. Refresh activity is
 coalesced to at most one event per user + app + hour, so the table stays small.
 
-Events are pruned by the hourly cleanup job after `ACTIVITY_RETENTION_DAYS`
-days (optional env var, default `365`). Lowering the value later prunes the
+Events are pruned by the daily cleanup job after `ACTIVITY_RETENTION_DAYS`
+days (optional env var, default `90`). Lowering the value later prunes the
 older history on the next cleanup run.
 
 ### Run

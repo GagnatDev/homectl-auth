@@ -8,7 +8,7 @@
 --                  session doesn't write a row every access-token lifetime
 --
 -- Rows are pruned by the cleanup job after ACTIVITY_RETENTION_DAYS (default
--- 365), so the table stays bounded regardless of traffic.
+-- 90), so the table stays bounded regardless of traffic.
 CREATE TABLE homectl_auth.activity_events (
   id          BIGINT      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id     UUID        NOT NULL REFERENCES homectl_auth.users(id) ON DELETE CASCADE,
