@@ -140,7 +140,7 @@ export type RedeemInviteError =
   | 'EMAIL_RACE';
 
 export type RedeemInviteOutcome =
-  | { ok: true; userId: string }
+  | { ok: true; userId: string; grantedAppIds: string[] }
   | { ok: false; error: RedeemInviteError };
 
 export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInviteOutcome> {
@@ -205,5 +205,5 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
     await grantAccess(userId, grant.appId, grant.role);
   }
 
-  return { ok: true, userId };
+  return { ok: true, userId, grantedAppIds: [...new Set(appGrants.map((g) => g.appId))] };
 }

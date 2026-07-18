@@ -90,18 +90,24 @@ export const api = {
     }),
 };
 
-/** Public: the login page fetches an app's display name for its heading. */
-export async function fetchAppName(clientId: string): Promise<string | null> {
+export type PublicAppInfo = { id: string; name: string; landingUrl: string | null };
+
+/** Public: app display info (name + landing URL) for the SPA's public pages. */
+export async function fetchPublicApp(clientId: string): Promise<PublicAppInfo | null> {
   try {
     const res = await fetch(`/api/apps/${encodeURIComponent(clientId)}`, {
       headers: { Accept: 'application/json' },
     });
     if (!res.ok) return null;
-    const body = (await res.json()) as { name: string };
-    return body.name;
+    return (await res.json()) as PublicAppInfo;
   } catch {
     return null;
   }
+}
+
+/** Public: the login page fetches an app's display name for its heading. */
+export async function fetchAppName(clientId: string): Promise<string | null> {
+  return (await fetchPublicApp(clientId))?.name ?? null;
 }
 
 /** Public: mint the GitHub authorize URL (also sets the CSRF state cookie). */

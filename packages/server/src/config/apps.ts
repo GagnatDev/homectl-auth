@@ -22,6 +22,11 @@ export type AppConfig = {
   allowedRedirectUris: string[];
   /** Origins allowed to call /refresh and /logout with credentials */
   allowedOrigins: string[];
+  /**
+   * URL end users are sent to when navigating to the app (e.g. after redeeming
+   * an invite). Optional — falls back to the app's first allowed origin.
+   */
+  landingUrl?: string;
   roles: AppRole[];
 };
 
@@ -64,6 +69,15 @@ export function getApp(clientId: string): AppConfig | undefined {
 
 export function getAllApps(): AppConfig[] {
   return Array.from(getAppsMap().values());
+}
+
+/**
+ * The URL to send an end user to when they should navigate to the app itself
+ * (not an OAuth callback). Explicit landingUrl wins; otherwise the first
+ * allowed origin. Null if neither is configured.
+ */
+export function getLandingUrl(app: AppConfig): string | null {
+  return app.landingUrl ?? app.allowedOrigins[0] ?? null;
 }
 
 /** Returns true if redirectUri is in the app's allow-list. */

@@ -11,8 +11,9 @@ import { authErrorMessage } from '@/lib/auth-messages';
 
 /**
  * Invite redemption: choose a username + password to activate the account.
- * Native POST to /invite (server redeems the token, then redirects to
- * /?invited=1). We add a client-side password-match guard before submit.
+ * Native POST to /invite. On success the server redirects straight to the
+ * granted app (single grant) or to the confirmation page's app chooser
+ * (multiple grants). We add a client-side password-match guard before submit.
  */
 export function InvitePage() {
   const [params] = useSearchParams();

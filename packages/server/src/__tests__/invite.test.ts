@@ -1,8 +1,9 @@
 import request from 'supertest';
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { getPool } from '../db';
 import { createApp } from '../app';
 import { generateTestKeys, resetKeys, signAccessToken } from '../modules/token/token.service';
+import { setAppsConfig, type AppConfig } from '../config/apps';
 import {
   setupTestAppConfig,
   TEST_APP_ID,
@@ -52,6 +53,8 @@ describe('Invite — admin flow', () => {
       .send({ token, username: 'newuser', password: 'Password123!' });
 
     expect(res.status).toBe(302);
+    // Single-app invite: redirected straight to the app (first allowed origin).
+    expect(res.headers['location']).toBe('https://test-app.homectl.no');
 
     const user = await findUserByEmail('newuser@example.com');
     expect(user).toBeTruthy();
@@ -175,6 +178,89 @@ describe('Invite — admin flow', () => {
     expect(res.status).toBe(302);
     const url = new URL(res.headers['location'] as string, 'http://localhost');
     expect(url.searchParams.get('error')).toBe('EMAIL_RACE');
+  });
+});
+
+// ── Post-signup redirect ───────────────────────────────────────────────────
+
+describe('Invite — post-signup redirect', () => {
+  const SECOND_APP: AppConfig = {
+    id: 'second-app',
+    name: 'Second App',
+    clientSecretEnv: 'SECOND_APP_CLIENT_SECRET',
+    allowedRedirectUris: ['https://second-app.homectl.no/auth/callback'],
+    allowedOrigins: ['https://second-app.homectl.no'],
+    roles: [{ name: 'viewer', rank: 1 }],
+  };
+
+  afterEach(async () => {
+    // Restore the canonical single-app config for other test files.
+    await setupTestAppConfig();
+  });
+
+  async function redeem(appGrants: { appId: string; role: string }[]) {
+    const admin = await makeAdminUser();
+    const { token } = await createAdminInvite({
+      email: 'redirect@example.com',
+      appGrants,
+      createdByUserId: admin.id,
+    });
+    return request(app)
+      .post('/invite')
+      .type('form')
+      .send({ token, username: 'redirectuser', password: 'Password123!' });
+  }
+
+  it('prefers an explicit landingUrl over the first allowed origin', async () => {
+    setAppsConfig([{ ...TEST_APP, landingUrl: 'https://test-app.homectl.no/welcome' }]);
+
+    const res = await redeem([{ appId: TEST_APP_ID, role: 'viewer' }]);
+
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toBe('https://test-app.homectl.no/welcome');
+  });
+
+  it('redirects to the app chooser when the invite granted multiple apps', async () => {
+    setAppsConfig([TEST_APP, SECOND_APP]);
+
+    const res = await redeem([
+      { appId: TEST_APP_ID, role: 'viewer' },
+      { appId: SECOND_APP.id, role: 'viewer' },
+    ]);
+
+    expect(res.status).toBe(302);
+    const url = new URL(res.headers['location'] as string, 'http://localhost');
+    expect(url.pathname).toBe('/');
+    expect(url.searchParams.get('invited')).toBe('1');
+    expect(url.searchParams.get('apps')).toBe(`${TEST_APP_ID},${SECOND_APP.id}`);
+  });
+
+  it('redirects straight to the only navigable app when the others have no landing URL', async () => {
+    setAppsConfig([TEST_APP, { ...SECOND_APP, allowedOrigins: [] }]);
+
+    const res = await redeem([
+      { appId: TEST_APP_ID, role: 'viewer' },
+      { appId: SECOND_APP.id, role: 'viewer' },
+    ]);
+
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toBe('https://test-app.homectl.no');
+  });
+
+  it('falls back to the plain confirmation page for a grant-less invite', async () => {
+    const res = await redeem([]);
+
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toBe('/?invited=1');
+  });
+
+  it('falls back to the plain confirmation page when no granted app has a landing URL', async () => {
+    setAppsConfig([{ ...TEST_APP, allowedOrigins: [] }]);
+
+    const res = await redeem([{ appId: TEST_APP_ID, role: 'viewer' }]);
+
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toBe('/?invited=1');
   });
 });
 
