@@ -22,6 +22,50 @@ export type UserDetail = UserSummary;
 export type AppRole = { name: string; rank: number };
 export type AppInfo = { id: string; name: string; roles: AppRole[] };
 
+// ── Statistics ──────────────────────────────────────────────────────────────
+
+export type StatsOverview = {
+  totalUsers: number;
+  neverLoggedIn: number;
+  newUsers30d: number;
+  activeUsers: { day: number; week: number; month: number };
+  activeSessions: { clientId: string; name: string; sessions: number; users: number }[];
+  totalActiveSessions: number;
+};
+
+export type DailyActivity = { date: string; logins: number; activeUsers: number };
+export type StatsActivity = { days: number; series: DailyActivity[] };
+
+export type AppUsage = {
+  clientId: string;
+  name: string;
+  configured: boolean;
+  grantedUsers: number;
+  logins: number;
+  activeUsers: number;
+  lastUsedAt: string | null;
+};
+export type StatsApps = { days: number; apps: AppUsage[] };
+
+export type ActivityEventType = 'login' | 'sso_login' | 'refresh';
+
+export type UserActivity = {
+  days: number;
+  apps: {
+    clientId: string;
+    name: string;
+    logins: number;
+    activeDays: number;
+    lastUsedAt: string;
+  }[];
+  recent: {
+    clientId: string;
+    name: string;
+    eventType: ActivityEventType;
+    occurredAt: string;
+  }[];
+};
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -88,6 +132,16 @@ export const api = {
     request<{ token: string; link: string }>(`/admin/api/users/${userId}/password-reset`, {
       method: 'POST',
     }),
+
+  getStatsOverview: () => request<StatsOverview>('/admin/api/stats/overview'),
+
+  getStatsActivity: (days: number) =>
+    request<StatsActivity>(`/admin/api/stats/activity?days=${days}`),
+
+  getStatsApps: (days: number) => request<StatsApps>(`/admin/api/stats/apps?days=${days}`),
+
+  getUserActivity: (userId: string, days = 30) =>
+    request<UserActivity>(`/admin/api/users/${userId}/activity?days=${days}`),
 };
 
 /** Public: the login page fetches an app's display name for its heading. */

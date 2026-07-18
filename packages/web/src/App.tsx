@@ -7,6 +7,7 @@ import { AdminLoginPage } from '@/pages/admin-login';
 import { UsersPage } from '@/pages/users';
 import { UserDetailPage } from '@/pages/user-detail';
 import { AdminInvitePage } from '@/pages/admin-invite';
+import { StatsPage } from '@/pages/stats';
 import { NotFoundPage } from '@/pages/not-found';
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
       <Route path="/admin" element={<UsersPage />} />
       <Route path="/admin/users/:id" element={<UserDetailPage />} />
       <Route path="/admin/invite" element={<AdminInvitePage />} />
+      <Route path="/admin/stats" element={<StatsPage />} />
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

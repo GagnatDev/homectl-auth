@@ -53,6 +53,17 @@ cp apps.example.json apps.json
 # Edit apps.json to match your app registrations
 ```
 
+### Activity statistics
+
+Successful logins, SSO sign-ins, and session refreshes are recorded in
+`homectl_auth.activity_events` and power the admin console's **Statistics**
+page (`/admin/stats`) and the per-user activity view. Refresh activity is
+coalesced to at most one event per user + app + hour, so the table stays small.
+
+Events are pruned by the hourly cleanup job after `ACTIVITY_RETENTION_DAYS`
+days (optional env var, default `365`). Lowering the value later prunes the
+older history on the next cleanup run.
+
 ### Run
 
 ```bash

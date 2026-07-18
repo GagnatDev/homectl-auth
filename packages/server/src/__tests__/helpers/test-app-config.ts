@@ -76,6 +76,7 @@ export async function truncateTables(): Promise<void> {
   // Truncate in dependency order (children first)
   await pool.query(`
     TRUNCATE TABLE
+      homectl_auth.activity_events,
       homectl_auth.authorization_codes,
       homectl_auth.sessions,
       homectl_auth.invite_tokens,

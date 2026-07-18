@@ -23,6 +23,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
               Users
             </Link>
             <Link
+              to="/admin/stats"
+              className="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            >
+              Statistics
+            </Link>
+            <Link
               to="/admin/invite"
               className="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
             >

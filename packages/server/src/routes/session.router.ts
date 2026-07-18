@@ -18,6 +18,7 @@ import {
 import { signAccessToken } from '../modules/token/token.service';
 import { getAccessForUser } from '../modules/app-access/app-access.repository';
 import { findUserById } from '../modules/user/user.repository';
+import { recordRefresh } from '../modules/activity/activity.service';
 import { getAllApps } from '../config/apps';
 import { credentialsCors } from '../middleware/cors.middleware';
 
@@ -84,6 +85,9 @@ sessionRouter.post('/refresh', async (req, res) => {
     apps: appAccesses.map((a) => ({ appId: a.appId, role: a.role })),
     clientId,
   });
+
+  // Ongoing app usage for the admin statistics (coalesced; never throws)
+  await recordRefresh(userId, clientId);
 
   res.json({ access_token: accessToken, token_type: 'Bearer', expires_in: 900 });
 });

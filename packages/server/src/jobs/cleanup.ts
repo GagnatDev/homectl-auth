@@ -13,6 +13,8 @@
 
 import { getPool } from '../db';
 import { logger } from '../logger';
+import { getActivityRetentionDays } from '../modules/activity/activity.service';
+import { deleteEventsOlderThanDays } from '../modules/activity/activity.repository';
 
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -44,6 +46,10 @@ export async function runCleanup(): Promise<void> {
       WHERE rotated_at IS NOT NULL AND rotated_at < NOW() - INTERVAL '1 hour'`,
   );
   totalDeleted += rotatedDeleted ?? 0;
+
+  // Activity events power the admin statistics; keep them for the configured
+  // retention window (ACTIVITY_RETENTION_DAYS, default 365) and prune the rest.
+  totalDeleted += await deleteEventsOlderThanDays(getActivityRetentionDays());
 
   if (totalDeleted > 0) {
     logger.info({ totalDeleted }, 'Cleanup job: deleted expired rows');

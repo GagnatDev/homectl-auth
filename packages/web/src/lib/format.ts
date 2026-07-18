@@ -8,3 +8,11 @@ export function formatDateTime(value: string | null | undefined): string {
     timeStyle: 'short',
   });
 }
+
+/** Short day label for chart axes/tooltips (e.g. "18 Jul"). */
+export function formatDay(value: string): string {
+  // Chart dates arrive as plain YYYY-MM-DD; parse as local, not UTC midnight.
+  const d = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
