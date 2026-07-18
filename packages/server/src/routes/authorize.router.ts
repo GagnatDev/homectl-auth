@@ -16,7 +16,8 @@ import {
   setSsoCookie,
   getSsoCookieValue,
 } from '../modules/session/session.service';
-import { findUserById } from '../modules/user/user.repository';
+import { findUserById, updateLastLogin } from '../modules/user/user.repository';
+import { recordLogin } from '../modules/activity/activity.service';
 import { serveShell } from '../web-shell';
 import express from 'express';
 
@@ -87,6 +88,11 @@ authorizeRouter.get('/authorize', async (req, res) => {
       if (user) {
         const rawToken = await createSession(ssoCookieUserId, client_id);
         setRefreshCookie(res, client_id, rawToken);
+
+        // An SSO short-circuit is a sign-in to this app: stamp last_login_at
+        // and record it for the admin statistics.
+        await updateLastLogin(ssoCookieUserId);
+        await recordLogin(ssoCookieUserId, client_id, 'sso_login');
 
         const { code } = await issueCode({
           userId: ssoCookieUserId,
@@ -161,6 +167,10 @@ authorizeRouter.post('/login', express.urlencoded({ extended: false }), async (r
     redirectToLoginError(res, { ...loginErrorParams, error: 'no_access' });
     return;
   }
+
+  // Stamp last_login_at and record the login for the admin statistics
+  await updateLastLogin(userId);
+  await recordLogin(userId, client_id, 'login');
 
   // Issue authorization code
   const { code } = await issueCode({ userId, clientId: client_id, redirectUri: redirect_uri });

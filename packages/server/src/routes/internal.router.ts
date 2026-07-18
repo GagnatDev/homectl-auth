@@ -19,6 +19,7 @@ import { rotateSession, deleteSessionByToken } from '../modules/session/session.
 import { signAccessToken } from '../modules/token/token.service';
 import { getAccessForUser } from '../modules/app-access/app-access.repository';
 import { findUserById } from '../modules/user/user.repository';
+import { recordRefresh } from '../modules/activity/activity.service';
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -76,6 +77,9 @@ internalRouter.post('/internal/refresh', async (req, res) => {
     apps: appAccesses.map((a) => ({ appId: a.appId, role: a.role })),
     clientId: client_id,
   });
+
+  // Ongoing app usage for the admin statistics (coalesced; never throws)
+  await recordRefresh(userId, client_id);
 
   res.json({
     access_token: accessToken,

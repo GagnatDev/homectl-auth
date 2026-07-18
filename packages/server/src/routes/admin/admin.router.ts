@@ -7,11 +7,13 @@
  *
  *   GET    /admin/api/users            — list all users with app access
  *   GET    /admin/api/users/:id        — user detail
+ *   GET    /admin/api/users/:id/activity — per-user activity statistics
  *   GET    /admin/api/apps             — configured apps + roles (for dropdowns)
  *   POST   /admin/api/users/:id/access — grant app access
  *   DELETE /admin/api/users/:id/access/:appId — revoke app access
  *   POST   /admin/api/invites          — create admin invite
  *   POST   /admin/api/users/:id/password-reset — create reset token
+ *   GET    /admin/api/stats/*          — dashboard statistics (stats.router.ts)
  */
 
 import { Router, type IRouter } from 'express';
@@ -25,7 +27,12 @@ import {
 } from '../../modules/app-access/app-access.repository';
 import { createAdminInvite } from '../../modules/invite/invite.service';
 import { createResetToken } from '../../modules/password-reset/password-reset.service';
+import {
+  getUserAppActivity,
+  getRecentUserEvents,
+} from '../../modules/activity/activity.repository';
 import { getAllApps } from '../../config/apps';
+import { statsRouter, parseDays } from './stats.router';
 
 export const adminRouter: IRouter = Router();
 
@@ -36,6 +43,7 @@ export const adminRouter: IRouter = Router();
 // calls these /admin/api endpoints; a 401/403 sends the SPA to /admin/login.
 
 adminRouter.use('/admin/api', requireAdmin);
+adminRouter.use('/admin/api/stats', statsRouter);
 
 // GET /admin/api/users
 adminRouter.get('/admin/api/users', async (_req, res) => {
@@ -80,6 +88,39 @@ adminRouter.get('/admin/api/users/:id', async (req, res) => {
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
     appAccess: access.map((a) => ({ appId: a.appId, role: a.role })),
+  });
+});
+
+// GET /admin/api/users/:id/activity?days=30 — per-app usage + recent events
+adminRouter.get('/admin/api/users/:id/activity', async (req, res) => {
+  const user = await findUserById(req.params['id']!);
+  if (!user) {
+    res.status(404).json({ error: 'not_found' });
+    return;
+  }
+
+  const days = parseDays(req.query['days']);
+  const appNames = new Map(getAllApps().map((a) => [a.id, a.name]));
+  const [apps, recent] = await Promise.all([
+    getUserAppActivity(user.id, days),
+    getRecentUserEvents(user.id, 20),
+  ]);
+
+  res.json({
+    days,
+    apps: apps.map((a) => ({
+      clientId: a.clientId,
+      name: appNames.get(a.clientId) ?? a.clientId,
+      logins: a.logins,
+      activeDays: a.activeDays,
+      lastUsedAt: a.lastUsedAt,
+    })),
+    recent: recent.map((e) => ({
+      clientId: e.clientId,
+      name: appNames.get(e.clientId) ?? e.clientId,
+      eventType: e.eventType,
+      occurredAt: e.occurredAt,
+    })),
   });
 });
 

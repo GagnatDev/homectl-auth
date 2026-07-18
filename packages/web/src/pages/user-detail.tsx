@@ -27,7 +27,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { api, ApiError, type AppInfo, type UserDetail } from '@/lib/api';
+import {
+  api,
+  ApiError,
+  type ActivityEventType,
+  type AppInfo,
+  type UserActivity,
+  type UserDetail,
+} from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 
 export function UserDetailPage() {
@@ -109,6 +116,7 @@ export function UserDetailPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <AppAccessCard user={user} apps={apps} onChange={refreshUser} reportError={reportError} />
         <PasswordResetCard userId={user.id} reportError={reportError} />
+        <ActivityCard userId={user.id} reportError={reportError} />
       </div>
     </AdminLayout>
   );
@@ -287,6 +295,98 @@ function GrantForm({
         </Button>
       </div>
     </div>
+  );
+}
+
+const EVENT_LABELS: Record<ActivityEventType, string> = {
+  login: 'Login',
+  sso_login: 'SSO login',
+  refresh: 'Active',
+};
+
+function ActivityCard({
+  userId,
+  reportError,
+}: {
+  userId: string;
+  reportError: (err: unknown) => void;
+}) {
+  const [activity, setActivity] = useState<UserActivity | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    api
+      .getUserActivity(userId)
+      .then((data) => active && setActivity(data))
+      .catch(reportError);
+    return () => {
+      active = false;
+    };
+  }, [userId, reportError]);
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader>
+        <CardTitle className="text-lg">Activity (last 30 days)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {!activity ? (
+          <Skeleton className="h-24 w-full rounded-md" />
+        ) : activity.apps.length === 0 && activity.recent.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No recorded activity yet. Usage shows up here once this user signs in.
+          </p>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2">
+            <div>
+              <h3 className="mb-2 text-sm font-medium">Apps used</h3>
+              {activity.apps.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No app usage in this period.</p>
+              ) : (
+                <ul className="divide-y rounded-md border">
+                  {activity.apps.map((a) => (
+                    <li key={a.clientId} className="p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate font-medium">{a.name}</span>
+                        <span className="shrink-0 text-sm text-muted-foreground">
+                          {a.logins} {a.logins === 1 ? 'login' : 'logins'} · active{' '}
+                          {a.activeDays} {a.activeDays === 1 ? 'day' : 'days'}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        Last used {formatDateTime(a.lastUsedAt)}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <h3 className="mb-2 text-sm font-medium">Recent events</h3>
+              {activity.recent.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No events recorded.</p>
+              ) : (
+                <ul className="divide-y rounded-md border text-sm">
+                  {activity.recent.map((e, i) => (
+                    <li key={i} className="flex items-center justify-between gap-3 p-2.5">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Badge variant="secondary" className="shrink-0 font-normal">
+                          {EVENT_LABELS[e.eventType]}
+                        </Badge>
+                        <span className="truncate text-muted-foreground">{e.name}</span>
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {formatDateTime(e.occurredAt)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
