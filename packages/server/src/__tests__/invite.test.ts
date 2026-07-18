@@ -264,6 +264,89 @@ describe('Invite — post-signup redirect', () => {
   });
 });
 
+// ── SSO session on activation ──────────────────────────────────────────────
+
+describe('Invite — SSO session on activation', () => {
+  function extractCookie(res: request.Response, name: string): string | undefined {
+    const raw = res.headers['set-cookie'];
+    const list: string[] = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    const found = list.find((c) => c.startsWith(`${name}=`));
+    return found?.split(';')[0]!.split('=').slice(1).join('=');
+  }
+
+  it('sets the SSO cookie when redemption creates a new account', async () => {
+    const admin = await makeAdminUser();
+    const { token } = await createAdminInvite({
+      email: 'sso-new@example.com',
+      appGrants: [{ appId: TEST_APP_ID, role: 'viewer' }],
+      createdByUserId: admin.id,
+    });
+
+    const res = await request(app)
+      .post('/invite')
+      .type('form')
+      .send({ token, username: 'ssonew', password: 'Password123!' });
+
+    expect(res.status).toBe(302);
+    const sso = extractCookie(res, 'homectl_sso');
+    const user = await findUserByEmail('sso-new@example.com');
+    expect(sso).toBe(user!.id);
+  });
+
+  it('does NOT set the SSO cookie when the invite targets an existing account', async () => {
+    const admin = await makeAdminUser();
+    await createTestUser({ email: 'sso-existing@example.com' });
+    const { token } = await createAdminInvite({
+      email: 'sso-existing@example.com',
+      appGrants: [{ appId: TEST_APP_ID, role: 'viewer' }],
+      createdByUserId: admin.id,
+    });
+
+    const res = await request(app)
+      .post('/invite')
+      .type('form')
+      .send({ token, username: 'ssoexisting', password: 'Password123!' });
+
+    expect(res.status).toBe(302);
+    expect(extractCookie(res, 'homectl_sso')).toBeUndefined();
+  });
+
+  it('lets a freshly activated user enter the app via /authorize without a login form', async () => {
+    const admin = await makeAdminUser();
+    const { token } = await createAdminInvite({
+      email: 'sso-flow@example.com',
+      appGrants: [{ appId: TEST_APP_ID, role: 'viewer' }],
+      createdByUserId: admin.id,
+    });
+
+    const redeemRes = await request(app)
+      .post('/invite')
+      .type('form')
+      .send({ token, username: 'ssoflow', password: 'Password123!' });
+    const sso = extractCookie(redeemRes, 'homectl_sso');
+    expect(sso).toBeTruthy();
+
+    // The app the user landed on starts its OAuth flow; the SSO short-circuit
+    // must redirect straight back to the callback with a code.
+    const redirectUri = TEST_APP.allowedRedirectUris[0]!;
+    const authRes = await request(app)
+      .get('/authorize')
+      .query({
+        response_type: 'code',
+        client_id: TEST_APP_ID,
+        redirect_uri: redirectUri,
+        state: 'xyz',
+      })
+      .set('Cookie', `homectl_sso=${sso}`);
+
+    expect(authRes.status).toBe(302);
+    const url = new URL(authRes.headers['location'] as string);
+    expect(`${url.origin}${url.pathname}`).toBe(redirectUri);
+    expect(url.searchParams.get('code')).toBeTruthy();
+    expect(url.searchParams.get('state')).toBe('xyz');
+  });
+});
+
 // ── Delegated (privileged app user) invite ─────────────────────────────────
 
 describe('Invite — delegated flow via POST /api/invites', () => {

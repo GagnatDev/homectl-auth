@@ -11,6 +11,7 @@ import express from 'express';
 import { redeemInvite, createDelegatedInvite } from '../modules/invite/invite.service';
 import { verifyAccessToken } from '../modules/token/token.service';
 import { getApp, getLandingUrl } from '../config/apps';
+import { setSsoCookie } from '../modules/session/session.service';
 import { serveShell } from '../web-shell';
 
 export const inviteRouter: IRouter = Router();
@@ -53,6 +54,16 @@ inviteRouter.post('/invite', express.urlencoded({ extended: false }), async (req
   if (!outcome.ok) {
     redirectToInviteError(res, token, outcome.error);
     return;
+  }
+
+  // Activation of a NEW account is a full authentication event — the redeemer
+  // just chose the account's password — so establish SSO. The app they land on
+  // then gets a code via the /authorize SSO short-circuit with no login form.
+  // Existing accounts get no session: an invite token only proves possession
+  // of the token (which the inviter also holds), not the account's
+  // credentials, so it must never authenticate an already-established user.
+  if (outcome.accountCreated) {
+    setSsoCookie(res, outcome.userId);
   }
 
   // Post-signup destination is derived exclusively from server-side app config
