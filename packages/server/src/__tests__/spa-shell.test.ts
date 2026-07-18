@@ -35,10 +35,14 @@ describe('SPA shell serving', () => {
 // ── Public endpoints the SPA reads ──────────────────────────────────────────
 
 describe('GET /api/apps/:clientId', () => {
-  it('returns the app id + name for a known client', async () => {
+  it('returns the app id, name and landing URL for a known client', async () => {
     const res = await request(app).get(`/api/apps/${TEST_APP_ID}`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ id: TEST_APP_ID, name: 'Test App' });
+    expect(res.body).toEqual({
+      id: TEST_APP_ID,
+      name: 'Test App',
+      landingUrl: 'https://test-app.homectl.no',
+    });
   });
 
   it('404s for an unknown client', async () => {

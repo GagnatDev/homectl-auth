@@ -6,7 +6,7 @@
  */
 
 import { Router, type IRouter } from 'express';
-import { getApp, validateRedirectUri } from '../config/apps';
+import { getApp, getLandingUrl, validateRedirectUri } from '../config/apps';
 import { verifyPassword } from '../modules/user/password.service';
 import { issueCode } from '../modules/auth-code/auth-code.service';
 import { hasAccess } from '../modules/app-access/app-access.repository';
@@ -42,8 +42,10 @@ function redirectToLoginError(
 }
 
 // ── GET /api/apps/:clientId ──────────────────────────────────────────────────
-// Public: the SPA login page fetches the app's display name for its heading.
-// Exposes only id + name — never the client secret env or redirect URIs.
+// Public: the SPA login page fetches the app's display name for its heading,
+// and the post-invite confirmation page fetches name + landing URL for the
+// app chooser. Exposes only id, name, and the user-facing landing URL —
+// never the client secret env or redirect URIs.
 
 authorizeRouter.get('/api/apps/:clientId', (req, res) => {
   const app = getApp(req.params['clientId']!);
@@ -51,7 +53,7 @@ authorizeRouter.get('/api/apps/:clientId', (req, res) => {
     res.status(404).json({ error: 'unknown_client' });
     return;
   }
-  res.json({ id: app.id, name: app.name });
+  res.json({ id: app.id, name: app.name, landingUrl: getLandingUrl(app) });
 });
 
 // ── GET /authorize ─────────────────────────────────────────────────────────

@@ -230,6 +230,10 @@ Add an entry to `apps.json` (see `apps.example.json`):
 }
 ```
 
+Optionally set `landingUrl` to the page users should land on when sent to the
+app (for example after redeeming an invite). It defaults to the first entry in
+`allowedOrigins`.
+
 ### 2. Generate and store the client secret
 
 **If your app is provisioned by `homectl-infra`'s Terraform** (`auth = true` in

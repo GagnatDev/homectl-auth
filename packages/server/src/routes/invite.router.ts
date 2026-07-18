@@ -10,6 +10,8 @@ import { Router, type IRouter } from 'express';
 import express from 'express';
 import { redeemInvite, createDelegatedInvite } from '../modules/invite/invite.service';
 import { verifyAccessToken } from '../modules/token/token.service';
+import { getApp, getLandingUrl } from '../config/apps';
+import { setSsoCookie } from '../modules/session/session.service';
 import { serveShell } from '../web-shell';
 
 export const inviteRouter: IRouter = Router();
@@ -54,8 +56,38 @@ inviteRouter.post('/invite', express.urlencoded({ extended: false }), async (req
     return;
   }
 
-  // Redirect to login with a success message (simple — no flash messages in v1)
-  res.redirect(302, '/?invited=1');
+  // Activation of a NEW account is a full authentication event — the redeemer
+  // just chose the account's password — so establish SSO. The app they land on
+  // then gets a code via the /authorize SSO short-circuit with no login form.
+  // Existing accounts get no session: an invite token only proves possession
+  // of the token (which the inviter also holds), not the account's
+  // credentials, so it must never authenticate an already-established user.
+  if (outcome.accountCreated) {
+    setSsoCookie(res, outcome.userId);
+  }
+
+  // Post-signup destination is derived exclusively from server-side app config
+  // (never from request input), so this cannot become an open redirect.
+  const destinations = outcome.grantedAppIds.flatMap((appId) => {
+    const app = getApp(appId);
+    const url = app ? getLandingUrl(app) : null;
+    return app && url ? [{ appId: app.id, url }] : [];
+  });
+
+  if (destinations.length === 1) {
+    // Single app granted — send the user straight to it.
+    res.redirect(302, destinations[0]!.url);
+  } else if (destinations.length > 1) {
+    // Multiple apps granted — let the confirmation page render a chooser.
+    const q = new URLSearchParams({
+      invited: '1',
+      apps: destinations.map((d) => d.appId).join(','),
+    });
+    res.redirect(302, `/?${q.toString()}`);
+  } else {
+    // No navigable app (grant-less invite or apps without a landing URL).
+    res.redirect(302, '/?invited=1');
+  }
 });
 
 // ── POST /api/invites ──────────────────────────────────────────────────────

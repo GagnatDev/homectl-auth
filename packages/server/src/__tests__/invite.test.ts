@@ -1,8 +1,9 @@
 import request from 'supertest';
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { getPool } from '../db';
 import { createApp } from '../app';
 import { generateTestKeys, resetKeys, signAccessToken } from '../modules/token/token.service';
+import { setAppsConfig, type AppConfig } from '../config/apps';
 import {
   setupTestAppConfig,
   TEST_APP_ID,
@@ -52,6 +53,8 @@ describe('Invite — admin flow', () => {
       .send({ token, username: 'newuser', password: 'Password123!' });
 
     expect(res.status).toBe(302);
+    // Single-app invite: redirected straight to the app (first allowed origin).
+    expect(res.headers['location']).toBe('https://test-app.homectl.no');
 
     const user = await findUserByEmail('newuser@example.com');
     expect(user).toBeTruthy();
@@ -175,6 +178,172 @@ describe('Invite — admin flow', () => {
     expect(res.status).toBe(302);
     const url = new URL(res.headers['location'] as string, 'http://localhost');
     expect(url.searchParams.get('error')).toBe('EMAIL_RACE');
+  });
+});
+
+// ── Post-signup redirect ───────────────────────────────────────────────────
+
+describe('Invite — post-signup redirect', () => {
+  const SECOND_APP: AppConfig = {
+    id: 'second-app',
+    name: 'Second App',
+    clientSecretEnv: 'SECOND_APP_CLIENT_SECRET',
+    allowedRedirectUris: ['https://second-app.homectl.no/auth/callback'],
+    allowedOrigins: ['https://second-app.homectl.no'],
+    roles: [{ name: 'viewer', rank: 1 }],
+  };
+
+  afterEach(async () => {
+    // Restore the canonical single-app config for other test files.
+    await setupTestAppConfig();
+  });
+
+  async function redeem(appGrants: { appId: string; role: string }[]) {
+    const admin = await makeAdminUser();
+    const { token } = await createAdminInvite({
+      email: 'redirect@example.com',
+      appGrants,
+      createdByUserId: admin.id,
+    });
+    return request(app)
+      .post('/invite')
+      .type('form')
+      .send({ token, username: 'redirectuser', password: 'Password123!' });
+  }
+
+  it('prefers an explicit landingUrl over the first allowed origin', async () => {
+    setAppsConfig([{ ...TEST_APP, landingUrl: 'https://test-app.homectl.no/welcome' }]);
+
+    const res = await redeem([{ appId: TEST_APP_ID, role: 'viewer' }]);
+
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toBe('https://test-app.homectl.no/welcome');
+  });
+
+  it('redirects to the app chooser when the invite granted multiple apps', async () => {
+    setAppsConfig([TEST_APP, SECOND_APP]);
+
+    const res = await redeem([
+      { appId: TEST_APP_ID, role: 'viewer' },
+      { appId: SECOND_APP.id, role: 'viewer' },
+    ]);
+
+    expect(res.status).toBe(302);
+    const url = new URL(res.headers['location'] as string, 'http://localhost');
+    expect(url.pathname).toBe('/');
+    expect(url.searchParams.get('invited')).toBe('1');
+    expect(url.searchParams.get('apps')).toBe(`${TEST_APP_ID},${SECOND_APP.id}`);
+  });
+
+  it('redirects straight to the only navigable app when the others have no landing URL', async () => {
+    setAppsConfig([TEST_APP, { ...SECOND_APP, allowedOrigins: [] }]);
+
+    const res = await redeem([
+      { appId: TEST_APP_ID, role: 'viewer' },
+      { appId: SECOND_APP.id, role: 'viewer' },
+    ]);
+
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toBe('https://test-app.homectl.no');
+  });
+
+  it('falls back to the plain confirmation page for a grant-less invite', async () => {
+    const res = await redeem([]);
+
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toBe('/?invited=1');
+  });
+
+  it('falls back to the plain confirmation page when no granted app has a landing URL', async () => {
+    setAppsConfig([{ ...TEST_APP, allowedOrigins: [] }]);
+
+    const res = await redeem([{ appId: TEST_APP_ID, role: 'viewer' }]);
+
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toBe('/?invited=1');
+  });
+});
+
+// ── SSO session on activation ──────────────────────────────────────────────
+
+describe('Invite — SSO session on activation', () => {
+  function extractCookie(res: request.Response, name: string): string | undefined {
+    const raw = res.headers['set-cookie'];
+    const list: string[] = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    const found = list.find((c) => c.startsWith(`${name}=`));
+    return found?.split(';')[0]!.split('=').slice(1).join('=');
+  }
+
+  it('sets the SSO cookie when redemption creates a new account', async () => {
+    const admin = await makeAdminUser();
+    const { token } = await createAdminInvite({
+      email: 'sso-new@example.com',
+      appGrants: [{ appId: TEST_APP_ID, role: 'viewer' }],
+      createdByUserId: admin.id,
+    });
+
+    const res = await request(app)
+      .post('/invite')
+      .type('form')
+      .send({ token, username: 'ssonew', password: 'Password123!' });
+
+    expect(res.status).toBe(302);
+    const sso = extractCookie(res, 'homectl_sso');
+    const user = await findUserByEmail('sso-new@example.com');
+    expect(sso).toBe(user!.id);
+  });
+
+  it('does NOT set the SSO cookie when the invite targets an existing account', async () => {
+    const admin = await makeAdminUser();
+    await createTestUser({ email: 'sso-existing@example.com' });
+    const { token } = await createAdminInvite({
+      email: 'sso-existing@example.com',
+      appGrants: [{ appId: TEST_APP_ID, role: 'viewer' }],
+      createdByUserId: admin.id,
+    });
+
+    const res = await request(app)
+      .post('/invite')
+      .type('form')
+      .send({ token, username: 'ssoexisting', password: 'Password123!' });
+
+    expect(res.status).toBe(302);
+    expect(extractCookie(res, 'homectl_sso')).toBeUndefined();
+  });
+
+  it('lets a freshly activated user enter the app via /authorize without a login form', async () => {
+    const admin = await makeAdminUser();
+    const { token } = await createAdminInvite({
+      email: 'sso-flow@example.com',
+      appGrants: [{ appId: TEST_APP_ID, role: 'viewer' }],
+      createdByUserId: admin.id,
+    });
+
+    const redeemRes = await request(app)
+      .post('/invite')
+      .type('form')
+      .send({ token, username: 'ssoflow', password: 'Password123!' });
+    const sso = extractCookie(redeemRes, 'homectl_sso');
+    expect(sso).toBeTruthy();
+
+    // The app the user landed on starts its OAuth flow; the SSO short-circuit
+    // must redirect straight back to the callback with a code.
+    const redirectUri = TEST_APP.allowedRedirectUris[0]!;
+    const authRes = await request(app)
+      .get('/authorize')
+      .query({
+        response_type: 'code',
+        client_id: TEST_APP_ID,
+        redirect_uri: redirectUri,
+        state: 'xyz',
+      })
+      .set('Cookie', `homectl_sso=${sso}`);
+
+    expect(authRes.status).toBe(302);
+    const url = new URL(authRes.headers['location'] as string);
+    expect(`${url.origin}${url.pathname}`).toBe(redirectUri);
+    expect(url.searchParams.get('code')).toBeTruthy();
+    expect(url.searchParams.get('state')).toBe('xyz');
   });
 });
 

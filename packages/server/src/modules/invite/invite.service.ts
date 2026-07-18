@@ -140,7 +140,18 @@ export type RedeemInviteError =
   | 'EMAIL_RACE';
 
 export type RedeemInviteOutcome =
-  | { ok: true; userId: string }
+  | {
+      ok: true;
+      userId: string;
+      grantedAppIds: string[];
+      /**
+       * True when redemption created the account (the redeemer set its
+       * password). False when the invite only added access to an existing
+       * account — in that case the redeemer has NOT proven the account's
+       * credentials, only possession of the invite token.
+       */
+      accountCreated: boolean;
+    }
   | { ok: false; error: RedeemInviteError };
 
 export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInviteOutcome> {
@@ -205,5 +216,10 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
     await grantAccess(userId, grant.appId, grant.role);
   }
 
-  return { ok: true, userId };
+  return {
+    ok: true,
+    userId,
+    grantedAppIds: [...new Set(appGrants.map((g) => g.appId))],
+    accountCreated: !existingUser,
+  };
 }
