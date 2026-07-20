@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="homectl auth">
+  <path fill="#2563eb"
+    d="M256 40 L432 108 V244 C432 360 356 446 256 480 C156 446 80 360 80 244 V108 Z"/>
+  <circle cx="256" cy="214" r="52" fill="#ffffff"/>
+  <path fill="#ffffff" d="M232 250 L216 366 H296 L280 250 Z"/>
+</svg>

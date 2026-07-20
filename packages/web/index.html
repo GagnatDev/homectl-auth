@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex" />
     <title>homectl auth</title>
+    <meta name="description" content="Secure sign-in and account administration for homectl." />
+
+    <!-- PWA: manifest + install/appearance hints. Assets live in /public and are
+         served from our own origin (script-src/img-src 'self'), ahead of any
+         auth-gated routes, so install works before sign-in. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#2563eb" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="homectl auth" />
   </head>
   <body>
     <div id="root"></div>
