@@ -41,5 +41,16 @@ data:
           { "name": "user", "rank": 1 },
           { "name": "admin", "rank": 2 }
         ]
+      },
+      {
+        "id": "games",
+        "name": "Games",
+        "clientSecretEnv": "GAMES_CLIENT_SECRET",
+        "allowedRedirectUris": ["https://games.homectl.no/auth/callback"],
+        "allowedOrigins": ["https://games.homectl.no"],
+        "roles": [
+          { "name": "player", "rank": 1 },
+          { "name": "admin", "rank": 2 }
+        ]
       }
     ]
