@@ -61,5 +61,26 @@
         "rank": 2
       }
     ]
+  },
+  {
+    "id": "games",
+    "name": "Games",
+    "clientSecretEnv": "GAMES_CLIENT_SECRET",
+    "allowedRedirectUris": [
+      "http://localhost:4180/auth/callback"
+    ],
+    "allowedOrigins": [
+      "http://localhost:4180"
+    ],
+    "roles": [
+      {
+        "name": "player",
+        "rank": 1
+      },
+      {
+        "name": "admin",
+        "rank": 2
+      }
+    ]
   }
 ]
