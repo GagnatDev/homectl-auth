@@ -409,7 +409,7 @@ then **skips the entire OAuth flow** and injects that identity on every request:
 docker run --rm -p 4180:4180 \
   -e NODE_ENV=development \
   -e PUBLIC_AUTH_URL=https://auth.homectl.no \
-  -e INTERNAL_AUTH_URL=http://localhost:9999 \
+  -e INTERNAL_AUTH_URL=http://localhost:4400 \
   -e AUTH_CLIENT_ID=workbench \
   -e AUTH_CLIENT_SECRET=dev \
   -e APP_BASE_URL=http://localhost:4180 \

@@ -27,7 +27,90 @@ Issues RS256-signed JWTs to all apps on the domain. Users have one account and o
 pnpm install
 ```
 
-### Environment
+### Recommended: Docker Compose (`pnpm dev`)
+
+This is the default, working-out-of-the-box path — no key generation or app
+registration required:
+
+```bash
+pnpm dev
+# runs: docker compose -f docker-compose.dev.yml up --build
+```
+
+This starts Postgres and the auth API together, using two files already
+checked into the repo:
+
+- **`.env.dev`** — dev-only RS256 key pair and per-app client secrets
+  (`WORKBENCH_CLIENT_SECRET`, `AIVO_CLIENT_SECRET`, `GAMES_CLIENT_SECRET`,
+  `UNFORKED_CLIENT_SECRET`, etc.), plus `AUTH_SERVICE_URL` for issuer
+  validation. Never used in production.
+- **`config/apps.json`** — dev app registrations (redirect URIs/origins on
+  `localhost`) for the reference sidecar apps and other local integration
+  targets.
+
+```
+# Auth API:   http://localhost:4400
+# JWKS:       http://localhost:4400/.well-known/jwks.json
+# Health:     http://localhost:4400/health
+```
+
+To add GitHub OAuth admin login on top of this, create `.env.local` (not
+checked in — auto-loaded alongside `.env.dev`, see `docker-compose.dev.yml`)
+with `GITHUB_ADMIN_CLIENT_ID` / `GITHUB_ADMIN_CLIENT_SECRET` /
+`GITHUB_ADMIN_USER_IDS`.
+
+Stop and reset with:
+
+```bash
+pnpm dev:clean
+```
+
+### GUI (React SPA)
+
+The login, invite, password-reset, and admin pages are a React SPA in
+`packages/web`. In production it is built (`vite build`) and served by the
+server as static assets — `WEB_DIST_DIR` points at the bundle (defaults to
+`dist/web`, where the Docker build copies it).
+
+For GUI development, run the Vite dev server alongside the auth API. Its dev
+port is fixed at **4401** (`packages/web/vite.config.ts`) to avoid colliding
+with other local repos' frontends. It proxies API and form-POST endpoints to
+the auth server (default `http://localhost:3000`; override with
+`AUTH_SERVER_ORIGIN`):
+
+```bash
+pnpm dev                                                     # terminal 1 — API on :4400 (Docker Compose)
+AUTH_SERVER_ORIGIN=http://localhost:4400 pnpm --filter @homectl/web dev   # terminal 2 — GUI on :4401 (HMR)
+```
+
+`AUTH_SERVER_ORIGIN` must be overridden here because the Docker Compose auth
+API is reached from the host at `:4400`, not Vite's built-in default of
+`:3000` (which only applies when the server itself is also run directly on
+the host — see the manual setup below).
+
+To serve the built GUI from the server itself (production parity):
+
+```bash
+pnpm --filter @homectl/web build
+WEB_DIST_DIR="$(pwd)/packages/web/dist" pnpm --filter @homectl/server dev
+```
+
+### Activity statistics
+
+Successful logins, SSO sign-ins, and session refreshes are recorded in
+`homectl_auth.activity_events` and power the admin console's **Statistics**
+page (`/admin/stats`) and the per-user activity view. Refresh activity is
+coalesced to at most one event per user + app + hour, so the table stays small.
+
+Events are pruned by the daily cleanup job after `ACTIVITY_RETENTION_DAYS`
+days (optional env var, default `90`). Lowering the value later prunes the
+older history on the next cleanup run.
+
+### Manual setup (without Docker)
+
+Use this path if you'd rather run Postgres and the server directly on the
+host instead of via Docker Compose (e.g. no Docker available). It requires
+generating your own RS256 keys and app registrations from scratch.
 
 ```bash
 cp .env.example .env.local
@@ -46,54 +129,22 @@ base64 -w0 < public_key.pem    # → RS256_PUBLIC_KEY_PEM
 
 Both `RS256_PRIVATE_KEY_PEM` and `RS256_PUBLIC_KEY_PEM` are required. The server signs JWTs with the private key and derives the JWKS `kid` from the public key, which is served at `/.well-known/jwks.json` for consuming apps.
 
-### Apps config
-
 ```bash
 cp apps.example.json apps.json
 # Edit apps.json to match your app registrations
 ```
 
-### Activity statistics
-
-Successful logins, SSO sign-ins, and session refreshes are recorded in
-`homectl_auth.activity_events` and power the admin console's **Statistics**
-page (`/admin/stats`) and the per-user activity view. Refresh activity is
-coalesced to at most one event per user + app + hour, so the table stays small.
-
-Events are pruned by the daily cleanup job after `ACTIVITY_RETENTION_DAYS`
-days (optional env var, default `90`). Lowering the value later prunes the
-older history on the next cleanup run.
-
-### Run
+`APPS_CONFIG_PATH` defaults to `./apps.json` relative to the server process's
+working directory — `packages/server` when started via
+`pnpm --filter @homectl/server dev` — so either keep the file there or set
+`APPS_CONFIG_PATH` to its absolute path. (This is unrelated to
+`config/apps.json`, which only the Docker Compose path above uses.)
 
 ```bash
 pnpm --filter @homectl/server dev
 # Server starts at http://localhost:3000
 # JWKS: http://localhost:3000/.well-known/jwks.json
 # Health: http://localhost:3000/health
-```
-
-### GUI (React SPA)
-
-The login, invite, password-reset, and admin pages are a React SPA in
-`packages/web`. In production it is built (`vite build`) and served by the
-server as static assets — `WEB_DIST_DIR` points at the bundle (defaults to
-`dist/web`, where the Docker build copies it).
-
-For GUI development, run the Vite dev server alongside the auth server. It
-proxies API and form-POST endpoints to the server (default `http://localhost:3000`;
-override with `AUTH_SERVER_ORIGIN`):
-
-```bash
-pnpm --filter @homectl/server dev      # terminal 1 — API on :3000
-pnpm --filter @homectl/web dev         # terminal 2 — GUI on :5173 (HMR)
-```
-
-To serve the built GUI from the server itself (production parity):
-
-```bash
-pnpm --filter @homectl/web build
-WEB_DIST_DIR="$(pwd)/packages/web/dist" pnpm --filter @homectl/server dev
 ```
 
 ### Test

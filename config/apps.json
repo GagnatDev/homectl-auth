@@ -63,6 +63,27 @@
     ]
   },
   {
+    "id": "unforked",
+    "name": "Unforked",
+    "clientSecretEnv": "UNFORKED_CLIENT_SECRET",
+    "allowedRedirectUris": [
+      "http://localhost:3002/auth/callback"
+    ],
+    "allowedOrigins": [
+      "http://localhost:3002"
+    ],
+    "roles": [
+      {
+        "name": "user",
+        "rank": 1
+      },
+      {
+        "name": "admin",
+        "rank": 2
+      }
+    ]
+  },
+  {
     "id": "games",
     "name": "Games",
     "clientSecretEnv": "GAMES_CLIENT_SECRET",
