@@ -23,7 +23,10 @@ export default defineConfig({
     modulePreload: { polyfill: false },
   },
   server: {
-    port: 5173,
+    // Fixed explicit port so this doesn't silently fall back to Vite's
+    // default (5173) and collide with other repos' frontends in the local
+    // multi-repo dev workspace.
+    port: 4401,
     proxy: {
       '/api': SERVER,
       '/admin/api': SERVER,
