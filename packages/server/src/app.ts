@@ -81,19 +81,25 @@ export function createApp(): Express {
   app.use(cookieParser());
 
   // ── Static assets ───────────────────────────────────────────────────────────
-  // The React SPA bundle (index.html + hashed /assets/*). Served from our own
-  // origin so the strict CSP (script-src 'self') needs no exception. Public —
-  // serving only files that exist; unmatched paths fall through to the routers
-  // and the shell catch-all below. Hashed assets are immutable; index.html is
-  // not cached so deploys take effect immediately.
+  // The React SPA bundle (index.html + hashed /assets/*) plus the PWA public
+  // files copied to the bundle root (manifest.webmanifest, sw.js, icons,
+  // favicon). Served from our own origin so the strict CSP (script-src 'self')
+  // needs no exception, and mounted ahead of every auth-gated router so PWA
+  // install works before sign-in. Public — serving only files that exist;
+  // unmatched paths fall through to the routers and the shell catch-all below.
+  //
+  // Only Vite's content-hashed /assets/* bundles are cached immutably. The
+  // shell, service worker, manifest and icons have stable names, so they must
+  // revalidate — otherwise a deploy or a new service worker would never reach
+  // clients holding a year-long immutable copy.
   app.use(
     express.static(WEB_DIST_DIR, {
       index: false,
-      setHeaders: (res, path) => {
-        if (path.endsWith('index.html')) {
-          res.setHeader('Cache-Control', 'no-cache');
-        } else {
+      setHeaders: (res, filePath) => {
+        if (/[\\/]assets[\\/]/.test(filePath)) {
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else {
+          res.setHeader('Cache-Control', 'no-cache');
         }
       },
     }),
