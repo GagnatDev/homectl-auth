@@ -153,7 +153,7 @@ export function TimeSeriesChart({
           width="100%"
           height={HEIGHT}
           tabIndex={0}
-          className="block outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="block outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           onPointerMove={(e) => setHover(indexFromClientX(e.clientX))}
           onPointerLeave={() => setHover(null)}
           onFocus={() => setHover((h) => h ?? data.length - 1)}

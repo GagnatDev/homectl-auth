@@ -78,6 +78,13 @@ export function createApp(): Express {
   // required so the invite form's bracket notation (appGrants[0][appId]) parses
   // into a nested array.
   app.use(express.urlencoded({ extended: true }));
+  // Express 5 leaves req.body undefined when no parser matched (no body, or an
+  // unsupported content type). Handlers destructure it, so default to {} to
+  // keep those requests on the 400 paths instead of throwing a 500.
+  app.use((req, _res, next) => {
+    req.body ??= {};
+    next();
+  });
   app.use(cookieParser());
 
   // ── Static assets ───────────────────────────────────────────────────────────
@@ -126,7 +133,8 @@ export function createApp(): Express {
   // Any unmatched GET that a browser made (Accept: text/html) gets the SPA shell
   // so React Router can resolve deep links (e.g. /admin/users/:id). API, token,
   // and well-known paths never fall here — they 404 as JSON instead.
-  app.get('*', (req, res) => {
+  // Express 5 requires a named wildcard. `{*splat}` matches every path, including `/`.
+  app.get('/{*splat}', (req, res) => {
     const isApiPath =
       /^\/(admin\/api|api|token|refresh|logout|health|internal|\.well-known)(\/|$)/.test(req.path);
     if (isApiPath || !req.accepts('html')) {

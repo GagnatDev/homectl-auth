@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
+import path from 'node:path';
 
 // In dev the SPA runs on Vite's own port; API + auth endpoints are proxied to
 // the Express server (default :3000). GET requests to /invite and
@@ -14,7 +14,7 @@ const onlyNonGet = (req: { method?: string; url?: string }) =>
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
+    alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
   build: {
     outDir: 'dist',

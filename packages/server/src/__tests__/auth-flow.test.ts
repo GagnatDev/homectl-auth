@@ -307,4 +307,11 @@ describe('POST /token — authorization code exchange', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('unsupported_grant_type');
   });
+
+  it('returns 400 when the request has no body', async () => {
+    const res = await request(app).post('/token');
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('unsupported_grant_type');
+  });
 });

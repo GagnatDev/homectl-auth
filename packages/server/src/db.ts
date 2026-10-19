@@ -32,6 +32,10 @@ export async function runMigrations(): Promise<void> {
     dir: join(__dirname, 'db', 'migrations'),
     direction: 'up',
     migrationsTable: 'pgmigrations',
+    // v9 fails immediately when another process holds the advisory lock.
+    // Waiting matches the previous behavior so a second replica can start
+    // while the first is still migrating.
+    advisoryLockMode: 'wait',
     log: () => {},
   });
 }

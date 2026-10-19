@@ -59,7 +59,7 @@ export type ProxyConfig = {
 /** Strip a trailing slash so `${url}/token` never doubles up. */
 const url = (name: string) =>
   z
-    .string({ required_error: `${name} is required` })
+    .string({ error: `${name} is required` })
     .trim()
     .min(1, `${name} is required`)
     .url(`${name} must be a valid URL`)
@@ -74,12 +74,12 @@ const path = (name: string, fallback: string) =>
 
 const boolean = (name: string, fallback: boolean) =>
   z
-    .enum(['true', 'false'], { invalid_type_error: `${name} must be true or false` })
+    .enum(['true', 'false'], { error: `${name} must be true or false` })
     .default(String(fallback) as 'true' | 'false')
     .transform((v) => v === 'true');
 
 const cookieKey = z
-  .string({ required_error: 'COOKIE_KEY is required' })
+  .string({ error: 'COOKIE_KEY is required' })
   .trim()
   .min(1, 'COOKIE_KEY is required')
   .refine(
@@ -104,7 +104,7 @@ const devIdentity = z
       parsed = JSON.parse(v);
     } catch {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: 'DEV_FAKE_IDENTITY must be valid JSON, e.g. {"sub":"dev","email":"dev@example.com","role":"admin"}',
       });
       return z.NEVER;
@@ -117,7 +117,7 @@ const devIdentity = z
     const result = shape.safeParse(parsed);
     if (!result.success) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: 'DEV_FAKE_IDENTITY must be an object with { sub, email, role? }',
       });
       return z.NEVER;
@@ -129,11 +129,11 @@ const envSchema = z.object({
   PUBLIC_AUTH_URL: url('PUBLIC_AUTH_URL'),
   INTERNAL_AUTH_URL: url('INTERNAL_AUTH_URL'),
   AUTH_CLIENT_ID: z
-    .string({ required_error: 'AUTH_CLIENT_ID is required' })
+    .string({ error: 'AUTH_CLIENT_ID is required' })
     .trim()
     .min(1, 'AUTH_CLIENT_ID is required'),
   AUTH_CLIENT_SECRET: z
-    .string({ required_error: 'AUTH_CLIENT_SECRET is required' })
+    .string({ error: 'AUTH_CLIENT_SECRET is required' })
     .min(1, 'AUTH_CLIENT_SECRET is required'),
   APP_BASE_URL: url('APP_BASE_URL'),
   UPSTREAM: url('UPSTREAM'),
@@ -141,12 +141,12 @@ const envSchema = z.object({
   CALLBACK_PATH: path('CALLBACK_PATH', '/auth/callback'),
   LOGOUT_PATH: path('LOGOUT_PATH', '/auth/logout'),
   LISTEN_PORT: z.coerce
-    .number({ invalid_type_error: 'LISTEN_PORT must be a number' })
+    .number({ error: 'LISTEN_PORT must be a number' })
     .int()
     .positive()
     .default(4180),
   REFRESH_SKEW_SECONDS: z.coerce
-    .number({ invalid_type_error: 'REFRESH_SKEW_SECONDS must be a number' })
+    .number({ error: 'REFRESH_SKEW_SECONDS must be a number' })
     .int()
     .nonnegative()
     .default(60),
