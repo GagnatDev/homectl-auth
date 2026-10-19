@@ -78,6 +78,13 @@ export function createApp(): Express {
   // required so the invite form's bracket notation (appGrants[0][appId]) parses
   // into a nested array.
   app.use(express.urlencoded({ extended: true }));
+  // Express 5 leaves req.body undefined when no parser matched (no body, or an
+  // unsupported content type). Handlers destructure it, so default to {} to
+  // keep those requests on the 400 paths instead of throwing a 500.
+  app.use((req, _res, next) => {
+    req.body ??= {};
+    next();
+  });
   app.use(cookieParser());
 
   // ── Static assets ───────────────────────────────────────────────────────────
