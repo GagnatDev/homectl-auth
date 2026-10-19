@@ -15,7 +15,7 @@ export async function setup(): Promise<void> {
     console.log('[global-setup] Using external PostgreSQL from TEST_DATABASE_URL');
   } else {
     console.log('[global-setup] Starting PostgreSQL container...');
-    container = await new PostgreSqlContainer('postgres:16-alpine').start();
+    container = await new PostgreSqlContainer('postgres:18-alpine').start();
     uri = container.getConnectionUri();
     console.log('[global-setup] PostgreSQL ready at', uri.replace(/:[^:@]+@/, ':***@'));
   }
@@ -27,6 +27,7 @@ export async function setup(): Promise<void> {
     dir: join(__dirname, 'src', 'db', 'migrations'),
     direction: 'up',
     migrationsTable: 'pgmigrations',
+    advisoryLockMode: 'wait',
     log: (msg) => console.log(`[global-setup] ${msg}`),
   });
 }

@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { generateKeyPair, exportJWK, SignJWT, createLocalJWKSet, type KeyLike } from 'jose';
+import { generateKeyPair, exportJWK, SignJWT, createLocalJWKSet, type CryptoKey } from 'jose';
 import { createHash, createHmac } from 'crypto';
 import cookieParser from 'cookie-parser';
 import { createAuthClient } from '../server';
@@ -19,7 +19,7 @@ const CLIENT_SECRET = 'test-client-secret';
 const APP_BASE_URL = 'https://app.test.example.com';
 const CALLBACK_PATH = '/auth/callback';
 
-let privateKey: KeyLike;
+let privateKey: CryptoKey;
 let kid: string;
 let app: ReturnType<typeof express>;
 

@@ -15,6 +15,8 @@
  */
 
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
+import type { ServerResponse } from 'http';
+import { Socket } from 'net';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import pinoHttp from 'pino-http';
 import type { JWTVerifyGetKey } from 'jose';
@@ -304,18 +306,29 @@ export function createProxyApp(opts: CreateProxyAppOptions): Express {
   return app;
 }
 
+function isServerResponse(res: ServerResponse | Socket): res is ServerResponse {
+  return !(res instanceof Socket);
+}
+
+const silentProxyLogger = {
+  info() {},
+  warn() {},
+  error() {},
+};
+
 function createUpstreamProxy(config: ProxyConfig) {
   return createProxyMiddleware({
     target: config.upstream,
     changeOrigin: false,
     // Bodies stream through untouched; we only mutate headers upstream.
-    logLevel: 'silent',
-    onError: (err, _req, res) => {
-      logger.error({ err: err.message }, 'upstream proxy error');
-      const response = res as Response;
-      if (!response.headersSent) {
+    logger: silentProxyLogger,
+    on: {
+      error: (err, _req, res) => {
+        logger.error({ err: err.message }, 'upstream proxy error');
+        if (!isServerResponse(res) || res.headersSent) return;
+        const response = res as Response;
         response.status(502).json({ error: 'bad_gateway' });
-      }
+      },
     },
   });
 }

@@ -126,7 +126,8 @@ export function createApp(): Express {
   // Any unmatched GET that a browser made (Accept: text/html) gets the SPA shell
   // so React Router can resolve deep links (e.g. /admin/users/:id). API, token,
   // and well-known paths never fall here — they 404 as JSON instead.
-  app.get('*', (req, res) => {
+  // Express 5 requires a named wildcard. `{*splat}` matches every path, including `/`.
+  app.get('/{*splat}', (req, res) => {
     const isApiPath =
       /^\/(admin\/api|api|token|refresh|logout|health|internal|\.well-known)(\/|$)/.test(req.path);
     if (isApiPath || !req.accepts('html')) {

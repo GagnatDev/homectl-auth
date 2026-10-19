@@ -15,7 +15,7 @@ import {
   jwtVerify,
   generateKeyPair,
   type JWTPayload,
-  type KeyLike,
+  type CryptoKey,
 } from 'jose';
 import { createHash } from 'crypto';
 
@@ -25,8 +25,8 @@ import { createHash } from 'crypto';
 // is used instead so that no real secret is needed.
 
 type KeyState = {
-  privateKey: KeyLike;
-  publicKey: KeyLike;
+  privateKey: CryptoKey;
+  publicKey: CryptoKey;
   kid: string;
 };
 
@@ -243,11 +243,15 @@ type JwksResponse = {
 export async function getJwks(): Promise<JwksResponse> {
   const { publicKey, kid } = getKeys();
   const jwk = await exportJWK(publicKey);
+  if (!jwk.kty) {
+    throw new Error('exported public JWK is missing kty');
+  }
 
   return {
     keys: [
       {
         ...jwk,
+        kty: jwk.kty,
         use: 'sig',
         alg: 'RS256',
         kid,

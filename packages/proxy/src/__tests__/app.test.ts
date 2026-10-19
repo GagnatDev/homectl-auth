@@ -16,7 +16,7 @@ import {
   exportJWK,
   SignJWT,
   createLocalJWKSet,
-  type KeyLike,
+  type CryptoKey,
   type JWTVerifyGetKey,
 } from 'jose';
 import { createHash } from 'crypto';
@@ -31,7 +31,7 @@ const CLIENT_ID = 'test-app';
 const APP_BASE_URL = 'https://test-app.homectl.no';
 const COOKIE_KEY_B64 = Buffer.alloc(32, 9).toString('base64');
 
-let privateKey: KeyLike;
+let privateKey: CryptoKey;
 let kid: string;
 let localJwks: JWTVerifyGetKey;
 let jwksKeys: unknown[];
