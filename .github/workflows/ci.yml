@@ -30,7 +30,7 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 12.14.0
+          version: 12.15.0
 
       - uses: actions/setup-node@v7
         with:
@@ -42,6 +42,12 @@ jobs:
 
       - name: Typecheck
         run: pnpm -r typecheck
+
+      # Production images run `vite build` (Dockerfile). Typecheck covers
+      # TypeScript and lucide-react named exports; it does not exercise Vite,
+      # PostCSS, or Rolldown. Keep this in CI when those packages move.
+      - name: Build (web — Vite/PostCSS production bundle)
+        run: pnpm --filter @homectl/web build
 
       - name: Test (client — no DB needed)
         run: pnpm --filter @gagnatdev/homectl-auth-client test
