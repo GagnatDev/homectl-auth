@@ -43,6 +43,12 @@ jobs:
       - name: Typecheck
         run: pnpm -r typecheck
 
+      # Production images run `vite build` (Dockerfile). Typecheck covers
+      # TypeScript and lucide-react named exports; it does not exercise Vite,
+      # PostCSS, or Rolldown. Keep this in CI when those packages move.
+      - name: Build (web — Vite/PostCSS production bundle)
+        run: pnpm --filter @homectl/web build
+
       - name: Test (client — no DB needed)
         run: pnpm --filter @gagnatdev/homectl-auth-client test
 
