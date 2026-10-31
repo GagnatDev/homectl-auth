@@ -89,6 +89,22 @@ beforeAll(async () => {
 
   // Upstream echo server on an ephemeral port.
   const upstream = express();
+  // Dedicated body-echo path so we can assert httpxy streams POST bodies
+  // through (4.2.1 / httpxy 0.5.6 changed when the client body is piped).
+  upstream.post('/echo-body', (req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      res.json({
+        path: req.path,
+        method: req.method,
+        body: Buffer.concat(chunks).toString('utf8'),
+        headers: req.headers,
+      });
+    });
+  });
   upstream.all(/.*/, (req, res) => {
     res.json({ path: req.path, method: req.method, headers: req.headers });
   });
@@ -302,6 +318,29 @@ describe('authenticated proxying', () => {
     expect(res.body.headers['x-homectl-user']).toBe('user-1');
     expect(res.body.headers['x-homectl-email']).toBe('a@b.no');
     expect(res.body.headers['x-homectl-role']).toBe('editor');
+  });
+
+  it('streams a POST body through to upstream untouched', async () => {
+    const { token, exp } = await makeToken({ sub: 'user-1', email: 'a@b.no', role: 'editor' });
+    const session: Session = {
+      refreshToken: 'r',
+      accessToken: token,
+      accessExp: exp,
+      sub: 'user-1',
+      email: 'a@b.no',
+      role: 'editor',
+    };
+
+    const payload = { hello: 'world', n: 42 };
+    const res = await request(buildApp())
+      .post('/echo-body')
+      .set('Cookie', sealedCookie(session))
+      .set('Content-Type', 'application/json')
+      .send(payload);
+
+    expect(res.status).toBe(200);
+    expect(res.body.method).toBe('POST');
+    expect(JSON.parse(res.body.body as string)).toEqual(payload);
   });
 
   it('strips forged inbound identity headers before proxying (security regression)', async () => {
