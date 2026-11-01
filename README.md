@@ -41,7 +41,7 @@ This starts Postgres and the auth API together, using two files already
 checked into the repo:
 
 - **`.env.dev`** — dev-only RS256 key pair and per-app client secrets
-  (`WORKBENCH_CLIENT_SECRET`, `AIVO_CLIENT_SECRET`, `GAMES_CLIENT_SECRET`,
+  (`WORKBENCH_CLIENT_SECRET`, `AIVO_CLIENT_SECRET`,
   `UNFORKED_CLIENT_SECRET`, etc.), plus `AUTH_SERVICE_URL` for issuer
   validation. Never used in production.
 - **`config/apps.json`** — dev app registrations (redirect URIs/origins on
