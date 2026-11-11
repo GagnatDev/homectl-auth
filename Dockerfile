@@ -1,5 +1,5 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM node:24.22.2-alpine AS builder
+FROM node:24.22.3-alpine AS builder
 
 RUN corepack enable && corepack prepare pnpm@12.18.0 --activate
 
@@ -27,7 +27,7 @@ RUN pnpm --filter @homectl/web build
 RUN pnpm --filter @homectl/server deploy --prod --legacy /app/deploy
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM node:24.22.2-alpine AS runtime
+FROM node:24.22.3-alpine AS runtime
 
 WORKDIR /app
 
