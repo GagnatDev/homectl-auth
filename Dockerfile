@@ -1,7 +1,7 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
 FROM node:24.22.3-alpine AS builder
 
-RUN corepack enable && corepack prepare pnpm@12.21.0 --activate
+RUN corepack enable && corepack prepare pnpm@12.24.0 --activate
 
 WORKDIR /app
 
